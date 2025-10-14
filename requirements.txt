@@ -1,0 +1,27 @@
+# Core Framework
+streamlit==1.32.0
+python-dotenv==1.0.1
+
+# Database & Storage
+psycopg[binary]==3.1.18
+supabase==2.7.4
+realtime-py==0.2.0
+
+# AI & Image Processing
+openai==1.14.0
+pillow==10.2.0
+imagehash==4.3.1
+
+# Color Science & Validation
+colormath==3.0.0
+
+# Data Validation
+pydantic==2.6.3
+pydantic-settings==2.2.1
+
+# Payments
+stripe==8.7.0
+
+# Utilities
+requests==2.31.0
+numpy==1.26.4
