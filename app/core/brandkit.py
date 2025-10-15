@@ -5,6 +5,12 @@ CRUD operations for brand kits and brand assets
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 import json
+class UUIDEncoder(json.JSONEncoder):
+    def default(self, obj):
+        from uuid import UUID
+        if isinstance(obj, UUID):
+            return str(obj)
+        return super().default(obj)
 from app.core.schemas import (
     BrandKit, BrandKitCreate, BrandAsset, BrandAssetCreate,
     BrandColors, BrandStyle, AssetType
@@ -41,8 +47,8 @@ class BrandKitManager:
             result = db.insert("brand_kits", {
                 "org_id": str(org_id),
                 "name": brand_kit_data.name,
-                "colors": json.dumps(colors_json),
-                "style": json.dumps(style_json)
+                "colors": json.dumps(colors_json, cls=UUIDEncoder),
+                "style": json.dumps(style_json, cls=UUIDEncoder)
             })
             
             logger.info(f"Created brand kit: {result['id']}")
@@ -171,10 +177,10 @@ class BrandKitManager:
         try:
             # Convert Pydantic models to JSON if present
             if "colors" in update_data and isinstance(update_data["colors"], BrandColors):
-                update_data["colors"] = json.dumps(update_data["colors"].model_dump())
+                update_data["colors"] = json.dumps(update_data["colors"].model_dump(), cls=UUIDEncoder)
             
             if "style" in update_data and isinstance(update_data["style"], BrandStyle):
-                update_data["style"] = json.dumps(update_data["style"].model_dump())
+                update_data["style"] = json.dumps(update_data["style"].model_dump(), cls=UUIDEncoder)
             
             result = db.update(
                 "brand_kits",
@@ -253,7 +259,7 @@ class BrandKitManager:
                 "brand_kit_id": str(asset_data.brand_kit_id),
                 "type": asset_data.type.value,
                 "url": asset_data.url,
-                "meta": json.dumps(asset_data.meta)
+                "meta": json.dumps(asset_data.meta, cls=UUIDEncoder)
             })
             
             logger.info(f"Added brand asset: {result['id']}")

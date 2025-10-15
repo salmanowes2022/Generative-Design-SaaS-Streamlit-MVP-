@@ -88,3 +88,8 @@ class Database:
 
 # Initialize database instance (singleton)
 db = Database()
+
+
+def get_db() -> Database:
+    """Get the database instance"""
+    return db

@@ -17,6 +17,14 @@ from app.infra.logging import get_logger
 
 logger = get_logger(__name__)
 
+import json
+class UUIDEncoder(json.JSONEncoder):
+    def default(self, obj):
+        from uuid import UUID
+        if isinstance(obj, UUID):
+            return str(obj)
+        return super().default(obj)
+
 
 class ValidationEngine:
     """Validates brand consistency in composed images"""
@@ -27,90 +35,13 @@ class ValidationEngine:
     
     def hex_to_lab(self, hex_color: str) -> LabColor:
         """
-        Convert HEX color to LAB color space
+        def validate_composed_asset(
         
         Args:
             hex_color: HEX color string (e.g., "#FF5733")
         
         Returns:
             LAB color object
-        """
-        # Remove '#' if present
-        hex_color = hex_color.lstrip('#')
-        
-        # Convert hex to RGB (0-1 range)
-        r = int(hex_color[0:2], 16) / 255.0
-        g = int(hex_color[2:4], 16) / 255.0
-        b = int(hex_color[4:6], 16) / 255.0
-        
-        # Create sRGB color and convert to LAB
-        rgb_color = sRGBColor(r, g, b)
-        lab_color = convert_color(rgb_color, LabColor)
-        
-        return lab_color
-    
-    def calculate_delta_e(self, hex1: str, hex2: str) -> float:
-        """
-        Calculate Delta E (CIE2000) between two colors
-        
-        Args:
-            hex1: First HEX color
-            hex2: Second HEX color
-        
-        Returns:
-            Delta E value (lower = more similar)
-        """
-        try:
-            lab1 = self.hex_to_lab(hex1)
-            lab2 = self.hex_to_lab(hex2)
-            
-            delta = delta_e_cie2000(lab1, lab2)
-            return float(delta)
-            
-        except Exception as e:
-            logger.error(f"Error calculating Delta E: {str(e)}")
-            return 100.0  # Return high value on error
-    
-    def validate_color_accuracy(
-        self,
-        sample_color: str,
-        brand_color: str,
-        tolerance: Optional[float] = None
-    ) -> Dict[str, Any]:
-        """
-        Validate if a color matches brand color within tolerance
-        
-        Args:
-            sample_color: HEX color from image
-            brand_color: Brand HEX color
-            tolerance: Delta E tolerance (default: 2.0)
-        
-        Returns:
-            Validation result with Delta E and pass/fail
-        """
-        tolerance = tolerance or self.color_tolerance
-        delta_e = self.calculate_delta_e(sample_color, brand_color)
-        
-        is_accurate = delta_e <= tolerance
-        
-        return {
-            "sample_color": sample_color,
-            "brand_color": brand_color,
-            "delta_e": round(delta_e, 2),
-            "tolerance": tolerance,
-            "accurate": is_accurate,
-            "accuracy_percentage": max(0, min(100, 100 - (delta_e * 10)))
-        }
-    
-    def calculate_logo_hash(self, logo_img: Image.Image) -> str:
-        """
-        Calculate perceptual hash of logo
-        
-        Args:
-            logo_img: Logo PIL Image
-        
-        Returns:
-            Hash string
         """
         try:
             # Convert to grayscale for consistent hashing
@@ -238,9 +169,23 @@ class ValidationEngine:
             
             if not asset_data or not asset_data.get("composed_url"):
                 raise ValueError("Composed asset not found")
-            
+
+            # Check if using mock storage (placeholder URLs)
+            composed_url = asset_data["composed_url"]
+            if "placeholder.com" in composed_url:
+                logger.warning("Mock storage detected - skipping image validation")
+                # Return mock validation result
+                from app.core.schemas import ValidationResult
+                return ValidationResult(
+                    logo_verified=False,
+                    logo_match_score=None,
+                    color_accuracy=None,
+                    color_delta_e=None,
+                    font_applied=True
+                )
+
             # Download composed image
-            response = requests.get(asset_data["composed_url"])
+            response = requests.get(composed_url)
             composed_img = Image.open(BytesIO(response.content))
             
             # Extract dominant colors from composed image
@@ -285,18 +230,14 @@ class ValidationEngine:
             )
             
             # Update asset with validation data
-            import json
             db.update(
                 "assets",
-                {"validation": json.dumps(validation_result.model_dump())},
+                {"validation": json.dumps(validation_result.model_dump(), cls=UUIDEncoder)},
                 "id = %s",
                 (str(asset_id),)
             )
-            
             logger.info(f"Validated asset {asset_id}")
-            
             return validation_result
-            
         except Exception as e:
             logger.error(f"Error validating asset: {str(e)}")
             raise

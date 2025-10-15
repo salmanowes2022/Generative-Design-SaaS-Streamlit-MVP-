@@ -5,6 +5,13 @@ Integration with DALL-E 3 for AI image generation
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 import requests
+import json
+class UUIDEncoder(json.JSONEncoder):
+    def default(self, obj):
+        from uuid import UUID
+        if isinstance(obj, UUID):
+            return str(obj)
+        return super().default(obj)
 from io import BytesIO
 from openai import OpenAI
 from app.core.schemas import JobCreate, Job, JobStatus, Asset, AssetCreate, AspectRatio
@@ -70,7 +77,7 @@ class OpenAIImageGenerator:
                 "status": JobStatus.QUEUED.value,
                 "prompt": job_data.prompt,
                 "engine": job_data.engine,
-                "params": json.dumps(job_data.params.model_dump())
+                "params": json.dumps(job_data.params.model_dump(), cls=UUIDEncoder)
             })
             
             logger.info(f"Created job: {result['id']}")
@@ -203,7 +210,7 @@ class OpenAIImageGenerator:
                     "job_id": str(job_id),
                     "base_url": public_url,
                     "aspect_ratio": aspect_ratio.value,
-                    "validation": json.dumps({})
+                    "validation": json.dumps({}, cls=UUIDEncoder)
                 })
                 
                 # Handle both string and dict for validation

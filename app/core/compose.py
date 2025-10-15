@@ -27,18 +27,25 @@ class CompositionEngine:
     def download_image(self, url: str) -> Image.Image:
         """
         Download an image from URL
-        
+
         Args:
             url: Image URL
-        
+
         Returns:
             PIL Image
         """
         try:
+            # Check for mock/placeholder URLs
+            if "placeholder.com" in url:
+                logger.warning(f"Mock storage detected - creating placeholder image for {url}")
+                # Create a simple placeholder image
+                img = Image.new('RGB', (1024, 1024), color=(200, 200, 200))
+                return img
+
             response = requests.get(url)
             response.raise_for_status()
             return Image.open(BytesIO(response.content))
-            
+
         except Exception as e:
             logger.error(f"Error downloading image: {str(e)}")
             raise
