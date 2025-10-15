@@ -184,24 +184,16 @@ class OpenAIImageGenerator:
                 # Get image URL
                 image_url = response.data[0].url
                 
-                # For MVP: Use OpenAI URL directly (skip Supabase upload)
-                # In production, you'd download and re-upload to your own storage
-                public_url = image_url
-                
-                logger.info(f"Generated image URL: {public_url}")
-                
-                # Note: OpenAI URLs expire after ~1 hour
-                # For production, uncomment below to upload to Supabase:
-                
-                # # Download and upload to Supabase Storage
-                # image_data = requests.get(image_url).content
-                # file_path = f"{org_id}/{job_id}/base_{i+1}.png"
-                # public_url = storage.upload_file(
-                #     bucket_type="assets",
-                #     file_path=file_path,
-                #     file_data=BytesIO(image_data),
-                #     content_type="image/png"
-                # )
+                # Download and upload to Supabase Storage
+                image_data = requests.get(image_url).content
+                file_path = f"{org_id}/{job_id}/base_{i+1}.png"
+                public_url = storage.upload_file(
+                    bucket_type="assets",
+                    file_path=file_path,
+                    file_data=BytesIO(image_data),
+                    content_type="image/png"
+                )
+                logger.info(f"Generated image uploaded to Supabase: {public_url}")
                 
                 # Create asset record
                 import json
