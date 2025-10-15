@@ -11,12 +11,17 @@ from uuid import UUID
 from openai import OpenAI
 
 from app.infra.config import settings
+from app.infra.logging import get_logger
 from app.core.brand_memory import brand_memory
+from app.core.brand_analyzer import brand_analyzer
+from app.core.brandbook_analyzer import brandbook_analyzer
 from app.core.brandkit import BrandKitManager
 from app.core.schemas import BrandKit, JobCreate, JobParams, AspectRatio, CompositionPreset
 from app.core.gen_openai import OpenAIImageGenerator
 from app.core.compose import CompositionEngine
 from app.core.validate import ValidationEngine
+
+logger = get_logger(__name__)
 
 
 class DesignAgent:
@@ -135,6 +140,7 @@ class DesignAgent:
     ) -> Dict[str, Any]:
         """
         Plan the design based on understood intent and brand context
+        Enhanced with deep brand analysis from past examples
         """
         # Get brand kit details
         brand_kit = None
@@ -143,14 +149,53 @@ class DesignAgent:
         except Exception:
             brand_kit = None
 
+        # STEP 1: Get Brand Book Guidelines (PRIORITY)
+        logger.info(f"Checking for brand book guidelines for org {org_id}")
+        brand_book_guidelines = None
+        try:
+            brand_book_guidelines = brandbook_analyzer.get_brand_guidelines(org_id)
+            if brand_book_guidelines:
+                logger.info("✅ Found brand book guidelines - using as primary source")
+            else:
+                logger.info("No brand book uploaded - will use examples and brand kit")
+        except Exception as e:
+            logger.error(f"Error retrieving brand book: {str(e)}")
+            brand_book_guidelines = None
+
+        # STEP 2: Deep Brand Analysis from past examples
+        logger.info(f"Performing deep brand analysis for org {org_id}")
+        brand_analysis = None
+        try:
+            user_request = intent.get("description", "")
+            brand_analysis = brand_analyzer.get_brand_analysis_for_generation(
+                org_id=org_id,
+                user_request=user_request
+            )
+
+            if brand_analysis.get("has_examples"):
+                logger.info(f"Found {brand_analysis.get('example_count', 0)} examples for deep analysis")
+                confidence = brand_analysis.get("analysis", {}).get("confidence_score", 0)
+                logger.info(f"Brand analysis confidence: {confidence:.1%}")
+            else:
+                logger.info("No past examples found")
+        except Exception as e:
+            logger.error(f"Brand analysis failed: {str(e)}")
+            brand_analysis = None
+
         # Get learned patterns
         try:
             patterns = brand_memory.get_brand_patterns(org_id)
         except Exception:
             patterns = []
 
-        # Build planning prompt
-        planning_prompt = self._build_planning_prompt(intent, brand_kit, patterns)
+        # Build planning prompt with ALL brand knowledge
+        planning_prompt = self._build_planning_prompt(
+            intent,
+            brand_kit,
+            patterns,
+            brand_analysis,
+            brand_book_guidelines
+        )
 
         response = self.client.chat.completions.create(
             model=model,
@@ -187,6 +232,7 @@ class DesignAgent:
         plan["intent"] = intent
         plan["brand_kit_id"] = str(brand_kit_id)
         plan["org_id"] = str(org_id)
+        plan["brand_analysis"] = brand_analysis  # Pass brand analysis to generation step
 
         # Normalize aspect ratio
         if plan.get("aspect_ratio") not in {"1:1", "4:5", "9:16"}:
@@ -385,8 +431,10 @@ Be specific and infer details when not explicitly stated."""
         intent: Dict[str, Any],
         brand_kit: Optional[BrandKit],
         patterns: List[Dict[str, Any]],
+        brand_analysis: Optional[Dict[str, Any]] = None,
+        brand_book_guidelines: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Build system prompt for design planning"""
+        """Build system prompt for design planning with complete brand knowledge"""
         if patterns:
             patterns_text = "\n".join(
                 f"- {p.get('pattern_name','pattern')}: Used {p.get('sample_count',0)} times, "
@@ -412,11 +460,60 @@ Be specific and infer details when not explicitly stated."""
             ]
             similar_work = "SIMILAR PAST WORK:\n" + "\n".join(lines)
 
+        # Add brand book guidelines (HIGHEST PRIORITY)
+        brand_book_section = ""
+        if brand_book_guidelines:
+            visual_id = brand_book_guidelines.get("visual_identity", {})
+            imagery = brand_book_guidelines.get("imagery_guidelines", {})
+            messaging = brand_book_guidelines.get("brand_messaging", {})
+
+            brand_book_section = f"""
+🎯 BRAND BOOK GUIDELINES (HIGHEST PRIORITY - MUST FOLLOW):
+
+Visual Identity:
+{json.dumps(visual_id, indent=2)}
+
+Imagery Guidelines:
+{json.dumps(imagery, indent=2)}
+
+Brand Messaging:
+{json.dumps(messaging, indent=2)}
+
+CRITICAL: These are the official brand guidelines. Follow them EXACTLY!
+"""
+
+        # Add deep brand analysis insights if available
+        brand_dna_section = ""
+        if brand_analysis and brand_analysis.get("has_examples"):
+            analysis_data = brand_analysis.get("analysis", {})
+            synthesis = analysis_data.get("synthesis", {})
+            guidelines = analysis_data.get("guidelines", {})
+
+            brand_signature = synthesis.get("brand_signature", "")
+            visual_style = synthesis.get("visual_style_dna", {})
+            color_dna = synthesis.get("color_dna", {})
+
+            style_keywords = ", ".join(visual_style.get("keywords", [])[:5])
+
+            brand_dna_section = f"""
+DEEP BRAND ANALYSIS (from {brand_analysis.get('example_count', 0)} past examples):
+- Brand Signature: {brand_signature}
+- Visual Style DNA: {style_keywords}
+- Color Patterns: {json.dumps(color_dna.get('palette', [])[:3])}
+- Background Style: {guidelines.get('background_style', 'Not analyzed')}
+- Must Include: {json.dumps(guidelines.get('must_include', []))}
+- Must Avoid: {json.dumps(guidelines.get('must_avoid', []))}
+
+IMPORTANT: Use these insights to complement the brand book guidelines!
+"""
+
         return f"""
 You are an expert design strategist planning a design.
 
 INTENT:
 {json.dumps(intent, indent=2)}
+
+{brand_book_section}
 
 BRAND KIT:
 - Name: {brand_name}
@@ -428,6 +525,8 @@ LEARNED PATTERNS:
 {patterns_text}
 
 {similar_work}
+
+{brand_dna_section}
 
 Plan the design and return JSON:
 {{

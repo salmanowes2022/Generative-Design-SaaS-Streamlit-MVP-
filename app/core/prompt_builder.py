@@ -1,8 +1,10 @@
 """
 Prompt Builder
 Constructs optimized prompts for image generation from brand kits
+Enhanced with deep brand analysis for true brand consistency
 """
-from typing import Optional
+from typing import Optional, Dict, Any
+from uuid import UUID
 from app.core.schemas import BrandKit, AspectRatio
 from app.infra.logging import get_logger
 
@@ -10,72 +12,117 @@ logger = get_logger(__name__)
 
 
 class PromptBuilder:
-    """Builds AI prompts from brand kit data"""
-    
+    """Builds AI prompts from brand kit data with deep brand understanding"""
+
     def build_prompt(
         self,
         user_prompt: str,
         brand_kit: BrandKit,
-        aspect_ratio: Optional[AspectRatio] = None
+        aspect_ratio: Optional[AspectRatio] = None,
+        brand_analysis: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Build a complete prompt for image generation
-        
+
         Args:
             user_prompt: User's input prompt
             brand_kit: Brand kit with style and color info
             aspect_ratio: Desired aspect ratio (optional)
-        
+            brand_analysis: Deep brand analysis from past examples (optional)
+
         Returns:
-            Complete optimized prompt
+            Complete optimized prompt that matches brand DNA
         """
-        # Extract style descriptors
-        style_descriptors = brand_kit.style.descriptors or []
-        style_text = ", ".join(style_descriptors) if style_descriptors else "clean, minimalist, professional"
-        
-        # Extract color palette
-        colors = []
-        if brand_kit.colors.primary:
-            colors.append(brand_kit.colors.primary)
-        if brand_kit.colors.secondary:
-            colors.append(brand_kit.colors.secondary)
-        if brand_kit.colors.accent:
-            colors.append(brand_kit.colors.accent)
-        
-        palette_hint = ""
-        if colors:
-            palette_hint = f"Use a color palette influenced by {', '.join(colors)}. "
-        
+        # If we have brand analysis, use the AI-generated brand-aware prompt
+        if brand_analysis and brand_analysis.get("has_examples") and brand_analysis.get("optimized_prompt"):
+            logger.info("Using AI-generated brand-aware prompt from deep analysis")
+            return brand_analysis["optimized_prompt"]
+
+        # Fall back to template-based prompt building
+        logger.info("No brand analysis available, using template-based prompt")
+
+        # Extract learned patterns from brand analysis if available
+        synthesis = brand_analysis.get("analysis", {}).get("synthesis", {}) if brand_analysis else {}
+        guidelines = brand_analysis.get("analysis", {}).get("guidelines", {}) if brand_analysis else {}
+
+        # Get style keywords from analysis or brand kit
+        style_keywords = []
+        if synthesis.get("visual_style_dna"):
+            style_keywords = synthesis["visual_style_dna"].get("keywords", [])
+        if not style_keywords:
+            style_descriptors = brand_kit.style.descriptors or []
+            style_keywords = style_descriptors if style_descriptors else ["clean", "minimalist", "professional"]
+
+        style_text = ", ".join(style_keywords[:5])
+
+        # Get color guidance from analysis or brand kit
+        color_guidance = ""
+        if synthesis.get("color_dna", {}).get("palette"):
+            colors = synthesis["color_dna"]["palette"][:3]
+            color_guidance = f"Color palette: {', '.join(colors)}. "
+        else:
+            colors = []
+            if brand_kit.colors.primary:
+                colors.append(brand_kit.colors.primary)
+            if brand_kit.colors.secondary:
+                colors.append(brand_kit.colors.secondary)
+            if brand_kit.colors.accent:
+                colors.append(brand_kit.colors.accent)
+            if colors:
+                color_guidance = f"Color palette influenced by {', '.join(colors)}. "
+
+        # Get background style from guidelines
+        background_style = guidelines.get("background_style", "")
+        if background_style:
+            background_style = f"Background: {background_style}. "
+
+        # Get composition rules
+        composition_rules = guidelines.get("composition_rules", [])
+        composition_text = ""
+        if composition_rules:
+            composition_text = f"Composition: {', '.join(composition_rules[:3])}. "
+
         # Build aspect ratio context
         aspect_context = ""
         if aspect_ratio:
             if aspect_ratio == AspectRatio.SQUARE:
-                aspect_context = "Square composition, centered subject. "
+                aspect_context = "Square 1:1 format, balanced composition. "
             elif aspect_ratio == AspectRatio.PORTRAIT:
-                aspect_context = "Vertical portrait composition, tall format. "
+                aspect_context = "Vertical 4:5 portrait format. "
             elif aspect_ratio == AspectRatio.STORY:
-                aspect_context = "Vertical story format, mobile-optimized layout. "
-        
-        # Negative prompts (things to avoid)
-        negatives = (
-            "Avoid: cluttered composition, cartoonish style, heavy grunge textures, "
-            "chaotic backgrounds, oversaturated colors, multiple focal points."
-        )
-        
+                aspect_context = "Vertical 9:16 story format, mobile-optimized. "
+
+        # Get must-avoid items from guidelines
+        must_avoid = guidelines.get("must_avoid", [])
+        if not must_avoid:
+            must_avoid = [
+                "cluttered composition", "cartoonish style", "heavy textures",
+                "chaotic backgrounds", "oversaturated colors", "multiple focal points"
+            ]
+        negatives = f"Avoid: {', '.join(must_avoid[:5])}. "
+
+        # Brand signature if available
+        brand_signature = synthesis.get("brand_signature", "")
+        if brand_signature:
+            brand_signature = f"Brand aesthetic: {brand_signature}. "
+
         # Construct final prompt
         final_prompt = (
-            f"Photorealistic marketing image, {style_text}. "
-            f"{aspect_context}"
             f"Subject: {user_prompt}. "
-            f"{palette_hint}"
-            f"Studio-quality lighting, crisp focus, professional photography. "
-            f"{negatives} "
-            f"CRITICAL: Do not include any logos, brand text, watermarks, or typography. "
-            f"The image should be clean and ready for brand overlay."
+            f"Style: {style_text}. "
+            f"{aspect_context}"
+            f"{background_style}"
+            f"{composition_text}"
+            f"{color_guidance}"
+            f"{brand_signature}"
+            f"Professional photography quality, studio lighting, crisp focus, high resolution. "
+            f"{negatives}"
+            f"CRITICAL: No text, no logos, no watermarks, no typography in the image. "
+            f"Clean background image ready for brand overlay."
         )
-        
-        logger.info(f"Built prompt: {final_prompt[:100]}...")
-        
+
+        logger.info(f"Built brand-aware prompt: {final_prompt[:120]}...")
+
         return final_prompt
     
     def build_variation_prompt(

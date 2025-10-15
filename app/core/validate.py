@@ -35,23 +35,91 @@ class ValidationEngine:
     
     def hex_to_lab(self, hex_color: str) -> LabColor:
         """
-        def validate_composed_asset(
-        
+        Convert HEX color to LAB color space
+
         Args:
             hex_color: HEX color string (e.g., "#FF5733")
-        
+
         Returns:
             LAB color object
+        """
+        # Remove # if present
+        hex_color = hex_color.lstrip('#')
+
+        # Convert to RGB
+        r = int(hex_color[0:2], 16) / 255.0
+        g = int(hex_color[2:4], 16) / 255.0
+        b = int(hex_color[4:6], 16) / 255.0
+
+        # Convert to LAB
+        rgb = sRGBColor(r, g, b)
+        lab = convert_color(rgb, LabColor)
+
+        return lab
+
+    def validate_color_accuracy(
+        self,
+        actual_color: str,
+        target_color: str
+    ) -> Dict[str, Any]:
+        """
+        Validate color accuracy using Delta E (CIE2000)
+
+        Args:
+            actual_color: HEX color from image
+            target_color: Target brand color (HEX)
+
+        Returns:
+            Dict with delta_e and accuracy_percentage
+        """
+        try:
+            # Convert both colors to LAB
+            actual_lab = self.hex_to_lab(actual_color)
+            target_lab = self.hex_to_lab(target_color)
+
+            # Calculate Delta E
+            delta_e = delta_e_cie2000(actual_lab, target_lab)
+
+            # Calculate accuracy percentage (Delta E < 2.0 is excellent)
+            # Scale: 0 = perfect, 2 = excellent, 5 = good, 10 = noticeable difference
+            accuracy = max(0, 100 - (delta_e * 10))
+
+            return {
+                "actual_color": actual_color,
+                "target_color": target_color,
+                "delta_e": float(delta_e),
+                "accuracy_percentage": round(accuracy, 1),
+                "is_acceptable": delta_e <= self.color_tolerance
+            }
+
+        except Exception as e:
+            logger.error(f"Error validating color: {str(e)}")
+            return {
+                "delta_e": 100.0,
+                "accuracy_percentage": 0.0,
+                "is_acceptable": False,
+                "error": str(e)
+            }
+
+    def calculate_logo_hash(self, logo_img: Image.Image) -> str:
+        """
+        Calculate perceptual hash for logo verification
+
+        Args:
+            logo_img: PIL Image of logo
+
+        Returns:
+            Perceptual hash string
         """
         try:
             # Convert to grayscale for consistent hashing
             if logo_img.mode != 'L':
                 logo_img = logo_img.convert('L')
-            
+
             # Calculate perceptual hash
             phash = imagehash.phash(logo_img)
             return str(phash)
-            
+
         except Exception as e:
             logger.error(f"Error calculating logo hash: {str(e)}")
             raise

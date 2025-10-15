@@ -44,11 +44,277 @@ def main():
                             st.info("Edit functionality coming soon!")
             
             st.markdown("---")
-    
+
     except Exception as e:
         logger.error(f"Error loading brand kits: {str(e)}")
         st.error("Error loading existing brand kits")
-    
+
+    # Brand Book Upload Section (PRIORITY!)
+    st.markdown("## 📖 Upload Brand Book (PDF)")
+    st.info("""
+    **📚 Upload your complete brand guidelines!**
+
+    Upload your brand book PDF and the AI will extract EVERYTHING:
+    - **Visual Identity**: Logo variations, colors (with HEX codes), typography
+    - **Brand Messaging**: Voice, tone, values, personality
+    - **Imagery Guidelines**: Photography style, composition rules
+    - **Layout System**: Grid, spacing, composition principles
+    - **Design Patterns**: Visual elements, graphic devices
+    - **Usage Rules**: Do's and Don'ts, application examples
+
+    **This creates a complete knowledge base for the AI to follow!**
+    """)
+
+    with st.expander("📤 Upload Brand Book PDF", expanded=True):
+        st.markdown("### Upload Your Brand Guidelines PDF")
+
+        brand_book_file = st.file_uploader(
+            "Select your brand book PDF",
+            type=["pdf"],
+            help="Upload your complete brand guidelines document",
+            key="brand_book_uploader"
+        )
+
+        if brand_book_file:
+            st.success(f"✅ {brand_book_file.name} uploaded!")
+
+            brand_name_input = st.text_input(
+                "Brand Name",
+                placeholder="e.g., Acme Corporation",
+                help="Enter your brand name",
+                key="brand_name_input"
+            )
+
+            if st.button("🧠 Analyze Brand Book", type="primary", use_container_width=True, disabled=not brand_name_input, key="analyze_brand_book_btn"):
+                with st.spinner("Analyzing brand book with GPT-4 Vision... This may take 2-5 minutes."):
+                    try:
+                        from app.core.brandbook_analyzer import brandbook_analyzer
+                        from uuid import UUID
+                        from io import BytesIO
+
+                        # Note: Requires pdf2image and PyPDF2
+                        st.info("📄 Extracting pages and analyzing with AI...")
+
+                        # Read PDF
+                        brand_book_file.seek(0)
+                        pdf_bytes = BytesIO(brand_book_file.read())
+
+                        # Analyze
+                        org_id = UUID(st.session_state.org_id)
+                        result = brandbook_analyzer.analyze_brand_book_pdf(
+                            org_id=org_id,
+                            pdf_file=pdf_bytes,
+                            brand_name=brand_name_input
+                        )
+
+                        st.success("✅ Brand book analysis complete!")
+                        st.balloons()
+
+                        # Show results
+                        st.markdown("### 📊 Analysis Results")
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Pages Analyzed", result.get("pages_analyzed", 0))
+                        with col2:
+                            st.metric("Total Pages", result.get("total_pages", 0))
+                        with col3:
+                            confidence = result.get("confidence_score", 0)
+                            st.metric("Completeness", f"{confidence:.0%}")
+
+                        guidelines = result.get("guidelines", {})
+
+                        # Show extracted guidelines
+                        st.markdown("#### ✨ Extracted Brand Guidelines")
+
+                        with st.expander("🎨 Visual Identity", expanded=True):
+                            visual = guidelines.get("visual_identity", {})
+                            if visual:
+                                st.json(visual)
+                            else:
+                                st.info("No visual identity guidelines extracted")
+
+                        with st.expander("📸 Imagery Guidelines"):
+                            imagery = guidelines.get("imagery_guidelines", {})
+                            if imagery:
+                                st.json(imagery)
+                            else:
+                                st.info("No imagery guidelines extracted")
+
+                        with st.expander("💬 Brand Messaging"):
+                            messaging = guidelines.get("brand_messaging", {})
+                            if messaging:
+                                st.json(messaging)
+                            else:
+                                st.info("No messaging guidelines extracted")
+
+                        with st.expander("📐 Layout & Design"):
+                            layout = guidelines.get("layout_system", {})
+                            principles = guidelines.get("design_principles", {})
+                            if layout or principles:
+                                st.json({"layout_system": layout, "design_principles": principles})
+                            else:
+                                st.info("No layout guidelines extracted")
+
+                        st.success("🎉 Your brand book is now the AI's knowledge base! All new designs will follow these guidelines.")
+
+                    except ImportError as ie:
+                        st.error("Missing required packages. Please install:")
+                        st.code("pip install pdf2image PyPDF2 Pillow")
+                        st.info("Note: pdf2image also requires poppler. On Mac: brew install poppler")
+                        logger.error(f"Import error: {str(ie)}")
+                    except Exception as e:
+                        logger.error(f"Error analyzing brand book: {str(e)}")
+                        st.error(f"Error: {str(e)}")
+                        import traceback
+                        with st.expander("Show error details"):
+                            st.code(traceback.format_exc())
+
+            elif not brand_name_input:
+                st.warning("⚠️ Please enter your brand name to proceed")
+        else:
+            st.info("👆 Upload your brand book PDF (up to 20 pages will be analyzed)")
+
+    st.markdown("---")
+
+    # Brand Example Images Section
+    st.markdown("## 🎨 Upload Brand Example Images")
+    st.info("""
+    **📸 Help the AI learn your brand style!**
+
+    Upload 3-5 examples of your past designs (social media posts, ads, banners, etc.).
+    The AI will analyze them using GPT-4 Vision to understand your brand's visual DNA:
+    - Layout and composition patterns
+    - Color usage and palette
+    - Typography and text placement
+    - Visual style and mood
+    - Brand element positioning
+
+    **The more examples you provide, the better the AI understands your brand!**
+    """)
+
+    with st.expander("📤 Upload Brand Examples", expanded=False):
+        st.markdown("### Upload Your Best Design Examples")
+
+        example_images = st.file_uploader(
+            "Select 3-5 past design examples",
+            type=["png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+            help="Upload your best past designs so AI can learn your brand style"
+        )
+
+        if example_images:
+            st.success(f"✅ {len(example_images)} examples uploaded!")
+
+            # Show thumbnails
+            cols = st.columns(min(len(example_images), 5))
+            for idx, img_file in enumerate(example_images[:5]):
+                with cols[idx]:
+                    try:
+                        # Read bytes and display to avoid BytesIO issues
+                        img_file.seek(0)
+                        img_bytes = img_file.read()
+                        img_file.seek(0)  # Reset for later use
+                        st.image(img_bytes, caption=f"Example {idx+1}", use_container_width=True)
+                    except Exception as e:
+                        st.warning(f"Preview {idx+1} unavailable")
+
+            if len(example_images) > 5:
+                st.warning(f"ℹ️ Only the first 5 examples will be analyzed. You uploaded {len(example_images)}.")
+
+            # Analyze button
+            if st.button("🧠 Analyze Brand Examples", type="primary", use_container_width=True):
+                with st.spinner("Analyzing your brand examples with GPT-4 Vision... This may take 1-2 minutes."):
+                    try:
+                        from app.core.brand_analyzer import brand_analyzer
+                        from app.core.storage import storage
+                        from uuid import UUID
+                        import time
+
+                        # Upload examples to storage and get URLs
+                        example_urls = []
+                        for idx, img_file in enumerate(example_images[:5]):
+                            # Upload to storage
+                            img_file.seek(0)
+                            file_path = f"{st.session_state.org_id}/brand_examples/example_{int(time.time())}_{idx}.png"
+
+                            public_url = storage.upload_file(
+                                bucket_type="assets",
+                                file_path=file_path,
+                                file_data=img_file,
+                                content_type="image/png"
+                            )
+                            example_urls.append(public_url)
+
+                        # Analyze examples
+                        org_id = UUID(st.session_state.org_id)
+                        analysis = brand_analyzer.analyze_brand_examples(
+                            org_id=org_id,
+                            example_urls=example_urls
+                        )
+
+                        # Display results
+                        st.success("✅ Brand analysis complete!")
+
+                        st.markdown("### 📊 Analysis Results")
+
+                        confidence = analysis.get("confidence_score", 0)
+                        st.metric("Analysis Confidence", f"{confidence:.0%}")
+
+                        synthesis = analysis.get("synthesis", {})
+
+                        if synthesis.get("brand_signature"):
+                            st.markdown("#### 🎯 Brand Signature")
+                            st.info(synthesis["brand_signature"])
+
+                        if synthesis.get("visual_style_dna"):
+                            st.markdown("#### 🎨 Visual Style DNA")
+                            keywords = synthesis["visual_style_dna"].get("keywords", [])
+                            st.write(", ".join(keywords))
+
+                        if synthesis.get("color_dna"):
+                            st.markdown("#### 🌈 Color Patterns")
+                            palette = synthesis["color_dna"].get("palette", [])
+                            if palette:
+                                color_cols = st.columns(len(palette[:5]))
+                                for i, color in enumerate(palette[:5]):
+                                    with color_cols[i]:
+                                        st.markdown(f"""
+                                        <div style="background-color: {color}; padding: 20px; border-radius: 8px; text-align: center; color: white; text-shadow: 1px 1px 2px black;">
+                                            {color}
+                                        </div>
+                                        """, unsafe_allow_html=True)
+
+                        guidelines = analysis.get("guidelines", {})
+
+                        if guidelines.get("must_include") or guidelines.get("must_avoid"):
+                            st.markdown("#### ✅ Design Guidelines")
+                            col1, col2 = st.columns(2)
+
+                            with col1:
+                                if guidelines.get("must_include"):
+                                    st.markdown("**Must Include:**")
+                                    for item in guidelines["must_include"]:
+                                        st.write(f"✅ {item}")
+
+                            with col2:
+                                if guidelines.get("must_avoid"):
+                                    st.markdown("**Must Avoid:**")
+                                    for item in guidelines["must_avoid"]:
+                                        st.write(f"❌ {item}")
+
+                        st.success("🎉 Your AI agent now understands your brand! New designs will match your style.")
+
+                    except Exception as e:
+                        logger.error(f"Error analyzing brand examples: {str(e)}")
+                        st.error(f"Error analyzing examples: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
+        else:
+            st.info("👆 Upload 3-5 of your best past designs to help the AI learn your brand style")
+
+    st.markdown("---")
+
     # Create new brand kit form
     st.markdown("## Create New Brand Kit")
     

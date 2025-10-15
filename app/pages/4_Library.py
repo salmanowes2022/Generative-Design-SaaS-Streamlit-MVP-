@@ -144,7 +144,7 @@ def main():
                         # Show composed if available, otherwise base
                         image_url = asset.get("composed_url") or asset["base_url"]
                         st.image(image_url, use_container_width=True)
-                        
+
                         # Asset info
                         st.caption(f"Created: {asset['created_at'].strftime('%Y-%m-%d %H:%M')}")
                         
