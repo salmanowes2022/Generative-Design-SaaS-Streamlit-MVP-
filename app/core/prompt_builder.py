@@ -6,6 +6,7 @@ Enhanced with deep brand analysis for true brand consistency
 from typing import Optional, Dict, Any
 from uuid import UUID
 from app.core.schemas import BrandKit, AspectRatio
+from app.core.brand_intelligence import brand_intelligence
 from app.infra.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,13 +34,25 @@ class PromptBuilder:
         Returns:
             Complete optimized prompt that matches brand DNA
         """
+        # Try to get saved brand intelligence
+        org_id = brand_kit.org_id
+        saved_intelligence = brand_intelligence.get_brand_intelligence(org_id)
+
+        if saved_intelligence:
+            logger.info("Using saved brand intelligence to build designer-style prompt")
+            return brand_intelligence.build_designer_prompt(
+                user_request=user_prompt,
+                brand_intelligence=saved_intelligence,
+                aspect_ratio=str(aspect_ratio.value) if aspect_ratio else "square"
+            )
+
         # If we have brand analysis, use the AI-generated brand-aware prompt
         if brand_analysis and brand_analysis.get("has_examples") and brand_analysis.get("optimized_prompt"):
             logger.info("Using AI-generated brand-aware prompt from deep analysis")
             return brand_analysis["optimized_prompt"]
 
         # Fall back to template-based prompt building
-        logger.info("No brand analysis available, using template-based prompt")
+        logger.info("No brand intelligence available, using template-based prompt")
 
         # Extract learned patterns from brand analysis if available
         synthesis = brand_analysis.get("analysis", {}).get("synthesis", {}) if brand_analysis else {}

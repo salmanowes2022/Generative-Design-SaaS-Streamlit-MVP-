@@ -56,23 +56,39 @@ class BrandBookAnalyzer:
         logger.info(f"Analyzing brand book for {brand_name}")
 
         try:
-            # Step 1: Extract pages from PDF
-            pages_data = self._extract_pdf_pages(pdf_file)
-            total_pages = len(pages_data)
-            logger.info(f"Extracted {total_pages} pages from brand book")
-
-            # Step 2: Analyze each page with GPT-4 Vision
-            page_analyses = []
-            for idx, page_data in enumerate(pages_data[:20]):  # Limit to 20 pages for cost
-                logger.info(f"Analyzing page {idx + 1}/{min(total_pages, 20)}")
-                analysis = self._analyze_page_with_vision(page_data, idx + 1)
-                if analysis:
-                    page_analyses.append(analysis)
-
-            # Step 3: Extract text content for detailed analysis
+            # Step 1: Extract text content first (always works)
             text_content = self._extract_text_from_pdf(pdf_file)
 
+            # Get total page count from PyPDF2
+            pdf_file.seek(0)
+            pdf_reader = PyPDF2.PdfReader(pdf_file)
+            total_pages = len(pdf_reader.pages)
+            logger.info(f"PDF has {total_pages} pages")
+
+            # Step 2: Try to extract pages as images for vision analysis
+            pages_data = []
+            page_analyses = []
+
+            try:
+                pages_data = self._extract_pdf_pages(pdf_file)
+                logger.info(f"Extracted {len(pages_data)} pages as images")
+
+                # Step 3: Analyze each page with GPT-4 Vision
+                if pages_data:
+                    for idx, page_data in enumerate(pages_data[:20]):  # Limit to 20 pages for cost
+                        logger.info(f"Analyzing page {idx + 1}/{min(len(pages_data), 20)}")
+                        analysis = self._analyze_page_with_vision(page_data, idx + 1)
+                        if analysis:
+                            page_analyses.append(analysis)
+                else:
+                    logger.warning("No pages extracted as images - will use text-only analysis")
+
+            except Exception as vision_error:
+                logger.warning(f"Vision analysis failed, falling back to text-only: {str(vision_error)}")
+                # Continue with text-only analysis
+
             # Step 4: Synthesize comprehensive brand guidelines
+            # This will work even with empty page_analyses if we have text_content
             brand_guidelines = self._synthesize_brand_guidelines(
                 page_analyses=page_analyses,
                 text_content=text_content,
@@ -88,11 +104,14 @@ class BrandBookAnalyzer:
                 "pages_analyzed": len(page_analyses),
                 "total_pages": total_pages,
                 "guidelines": brand_guidelines,
-                "confidence_score": self._calculate_guideline_confidence(brand_guidelines)
+                "confidence_score": self._calculate_guideline_confidence(brand_guidelines),
+                "analysis_method": "vision+text" if page_analyses else "text-only"
             }
 
         except Exception as e:
             logger.error(f"Error analyzing brand book: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             raise
 
     def _extract_pdf_pages(self, pdf_file: BytesIO) -> List[Dict[str, Any]]:
@@ -106,8 +125,20 @@ class BrandBookAnalyzer:
 
             # Convert PDF pages to images
             pdf_file.seek(0)
-            images = convert_from_bytes(pdf_file.read(), dpi=150)
+            pdf_bytes = pdf_file.read()
 
+            if not pdf_bytes:
+                logger.error("PDF file is empty - no data to read")
+                raise ValueError("PDF file is empty")
+
+            logger.info(f"Converting PDF ({len(pdf_bytes)} bytes) to images...")
+            images = convert_from_bytes(pdf_bytes, dpi=150)
+
+            if not images:
+                logger.error("No images extracted from PDF")
+                raise ValueError("No pages could be extracted from PDF")
+
+            logger.info(f"Successfully converted {len(images)} PDF pages to images")
             pages_data = []
             for idx, img in enumerate(images):
                 # Convert PIL image to base64
@@ -122,27 +153,47 @@ class BrandBookAnalyzer:
 
             return pages_data
 
-        except ImportError:
-            logger.error("pdf2image not installed. Install with: pip install pdf2image")
-            # Fallback: Try to extract images another way or skip vision analysis
+        except ImportError as ie:
+            error_msg = "pdf2image library not installed. Please install it: pip install pdf2image"
+            logger.error(error_msg)
+            logger.error("Note: pdf2image also requires poppler. On Mac: brew install poppler")
+            # Return empty list to allow text-only analysis to continue
             return []
         except Exception as e:
             logger.error(f"Error extracting PDF pages: {str(e)}")
+            # Return empty list to allow text-only analysis to continue
             return []
 
     def _extract_text_from_pdf(self, pdf_file: BytesIO) -> str:
         """Extract all text content from PDF for text analysis"""
         try:
             pdf_file.seek(0)
+            pdf_bytes = pdf_file.read()
+
+            if not pdf_bytes:
+                logger.error("PDF file is empty - no text to extract")
+                return ""
+
+            pdf_file.seek(0)
             pdf_reader = PyPDF2.PdfReader(pdf_file)
 
+            total_pages = len(pdf_reader.pages)
+            logger.info(f"Extracting text from {total_pages} PDF pages...")
+
             text_content = []
-            for page in pdf_reader.pages:
+            for idx, page in enumerate(pdf_reader.pages):
                 text = page.extract_text()
                 if text.strip():
                     text_content.append(text)
+                    logger.debug(f"Page {idx + 1}: Extracted {len(text)} characters")
 
-            return "\n\n".join(text_content)
+            extracted_text = "\n\n".join(text_content)
+            logger.info(f"Total text extracted: {len(extracted_text)} characters from {len(text_content)} pages")
+
+            if not extracted_text:
+                logger.warning("No text content could be extracted from PDF (might be image-only PDF)")
+
+            return extracted_text
 
         except Exception as e:
             logger.error(f"Error extracting text from PDF: {str(e)}")
@@ -258,14 +309,29 @@ Be SPECIFIC - include measurements, exact color codes, specific font names, prec
         """
         Synthesize comprehensive brand guidelines from all page analyses and text
         """
+        # Check if we have any data to work with
+        if not page_analyses and not text_content:
+            logger.error("No data available for synthesis - both vision and text extraction failed")
+            return self._get_default_guidelines(brand_name)
+
         # Combine all page analyses
-        pages_summary = "\n\n".join([
-            f"Page {a.get('page_number', 'N/A')}:\n{json.dumps(a, indent=2)}"
-            for a in page_analyses
-        ])
+        if page_analyses:
+            pages_summary = "\n\n".join([
+                f"Page {a.get('page_number', 'N/A')}:\n{json.dumps(a, indent=2)}"
+                for a in page_analyses
+            ])
+            logger.info(f"Using vision analysis from {len(page_analyses)} pages")
+        else:
+            pages_summary = "No visual analysis available - using text content only"
+            logger.warning("No vision analysis available, falling back to text-only")
 
         # Truncate text if too long
-        text_summary = text_content[:10000] if len(text_content) > 10000 else text_content
+        text_summary = text_content[:15000] if len(text_content) > 15000 else text_content
+        logger.info(f"Using {len(text_summary)} characters of text content")
+
+        if not text_summary and not page_analyses:
+            logger.error("No usable content found in PDF")
+            return self._get_default_guidelines(brand_name)
 
         synthesis_prompt = f"""You are analyzing a brand book for "{brand_name}".
 
@@ -274,6 +340,8 @@ VISION ANALYSIS OF PAGES:
 
 TEXT CONTENT FROM PDF:
 {text_summary}
+
+IMPORTANT: Extract as much information as possible from the available data above. If visual analysis is not available, focus heavily on the text content to extract brand guidelines.
 
 Synthesize COMPLETE, ACTIONABLE brand guidelines:
 

@@ -6,29 +6,81 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 import requests
 import json
-class UUIDEncoder(json.JSONEncoder):
-    def default(self, obj):
-        from uuid import UUID
-        if isinstance(obj, UUID):
-            return str(obj)
-        return super().default(obj)
+import time
 from io import BytesIO
+
 from openai import OpenAI
+from openai import RateLimitError
 from app.core.schemas import JobCreate, Job, JobStatus, Asset, AssetCreate, AspectRatio
 from app.infra.config import settings
 from app.infra.db import db
 from app.core.storage import storage
 from app.infra.logging import get_logger
 
+
+class UUIDEncoder(json.JSONEncoder):
+    def default(self, obj):
+        from uuid import UUID
+        if isinstance(obj, UUID):
+            return str(obj)
+        return super().default(obj)
+
 logger = get_logger(__name__)
 
 
 class OpenAIImageGenerator:
     """Handles image generation with OpenAI DALL-E"""
-    
+
     def __init__(self):
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = settings.DEFAULT_IMAGE_MODEL
+
+    def _retry_with_exponential_backoff(
+        self,
+        func,
+        max_retries: int = 3,
+        initial_delay: float = 1.0,
+        backoff_factor: float = 2.0
+    ):
+        """
+        Retry a function with exponential backoff for rate limit errors
+
+        Args:
+            func: Function to retry
+            max_retries: Maximum number of retries
+            initial_delay: Initial delay in seconds
+            backoff_factor: Multiplier for delay on each retry
+
+        Returns:
+            Function result if successful
+
+        Raises:
+            Exception if all retries fail
+        """
+        delay = initial_delay
+        last_exception = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                return func()
+            except RateLimitError as e:
+                last_exception = e
+                if attempt < max_retries:
+                    logger.warning(f"Rate limit hit, retrying in {delay}s... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    delay *= backoff_factor
+                else:
+                    logger.error(f"Rate limit exceeded after {max_retries} retries")
+                    raise ValueError(
+                        f"OpenAI rate limit exceeded. Please wait a few minutes and try again. "
+                        f"If this persists, you may have exceeded your API quota."
+                    ) from e
+            except Exception as e:
+                # For non-rate-limit errors, fail immediately
+                raise
+
+        # Should never reach here, but just in case
+        raise last_exception
     
     def moderate_prompt(self, prompt: str) -> Dict[str, Any]:
         """
@@ -171,15 +223,19 @@ class OpenAIImageGenerator:
             # DALL-E 3 generates 1 image per call
             for i in range(min(num_images, 4)):
                 logger.info(f"Generating image {i+1}/{num_images} with DALL-E 3")
-                
-                response = self.client.images.generate(
-                    model=self.model,
-                    prompt=prompt,
-                    size=size,
-                    quality=quality,
-                    style=style,
-                    n=1
-                )
+
+                # Use retry logic for rate limit handling
+                def _generate_image():
+                    return self.client.images.generate(
+                        model=self.model,
+                        prompt=prompt,
+                        size=size,
+                        quality=quality,
+                        style=style,
+                        n=1
+                    )
+
+                response = self._retry_with_exponential_backoff(_generate_image)
                 
                 # Get image URL
                 image_url = response.data[0].url
@@ -222,9 +278,14 @@ class OpenAIImageGenerator:
                 )
                 
                 generated_assets.append(asset)
-                
+
                 logger.info(f"Generated and stored asset: {asset.id}")
-            
+
+                # Add delay between generations to avoid rate limits (except for last image)
+                if i < min(num_images, 4) - 1:
+                    logger.info("Waiting 2 seconds before next generation to avoid rate limits...")
+                    time.sleep(2)
+
             # Update job status to done
             self.update_job_status(job_id, JobStatus.DONE)
             

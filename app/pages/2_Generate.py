@@ -218,7 +218,34 @@ def main():
             
             except Exception as e:
                 logger.error(f"Error generating images: {str(e)}")
-                st.error(f"❌ Generation failed: {str(e)}")
+
+                # Check if it's a rate limit error
+                error_msg = str(e)
+                if "rate limit" in error_msg.lower() or "429" in error_msg or "Too Many Requests" in error_msg:
+                    st.error("🚫 **OpenAI Rate Limit Exceeded**")
+                    st.warning("""
+                    **What happened?**
+                    You've made too many requests to OpenAI's API in a short time.
+
+                    **What to do:**
+                    1. **Wait 1-2 minutes** and try again
+                    2. **Reduce number of images** - Try generating 1 image instead of multiple
+                    3. **Check your API quota** - You may have exceeded your monthly limit
+
+                    **OpenAI Rate Limits:**
+                    - Free tier: 3 requests/minute, 200 requests/day
+                    - Tier 1: 5 requests/minute, 500 requests/day
+                    - Higher tiers have higher limits
+
+                    The system will automatically retry with delays, but if you keep hitting limits, wait longer between requests.
+                    """)
+                else:
+                    st.error(f"❌ Generation failed: {error_msg}")
+
+                import traceback
+                with st.expander("🔍 Show technical details"):
+                    st.code(traceback.format_exc())
+
                 return
     
     # Display generated images
