@@ -27,8 +27,9 @@ OPENAI_RETRY_DELAY=1.0
 # ============================================
 # Canva Integration (Brand Brain v2)
 # ============================================
-CANVA_CLIENT_ID=your-canva-app-client-id
-CANVA_CLIENT_SECRET=your-canva-app-client-secret
+
+CANVA_CLIENT_ID=OC-AZn3Gq75zGyH
+CANVA_CLIENT_SECRET=cnvcaYUxTdyVMecu6ui8wZf8BL6ywsowyz72nH-OcR2N6Q4U0cd1a6b3
 CANVA_REDIRECT_URI=http://localhost:8501/canva/callback
 
 # Canva API base URL (usually default)

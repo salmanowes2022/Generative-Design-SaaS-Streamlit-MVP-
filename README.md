@@ -6,6 +6,15 @@ Transform chat messages into finished, on-brand designs automatically using Open
 
 ## 🚀 What's New in v2
 
+### 🔗 Canva Connect API Integration (NEW!)
+- **OAuth2 Authentication**: Secure user authorization with Canva
+- **Template Management**: Browse and configure brand templates
+- **Automated Design Creation**: AI backgrounds + Canva templates
+- **Design Export**: High-quality PNG/JPG exports
+- **User Workspace Access**: Profile, designs, and team integration
+
+👉 **[Quick Start Guide](./QUICKSTART.md)** | **[Full Documentation](./CANVA_INTEGRATION.md)**
+
 ### Brand Brain Architecture
 - **Design Tokens**: Colors, typography, logo rules, layouts, templates
 - **Brand Policies**: Voice guidelines, forbidden terms
@@ -24,18 +33,20 @@ Transform chat messages into finished, on-brand designs automatically using Open
 ✅ **OCR Gate**: Automatically rejects AI backgrounds with accidental text
 ✅ **Logo Engine**: Luminance-based variant selection (light/dark/color)
 ✅ **Validator v2**: On-brand scoring (0-100) with ΔE color matching
-✅ **Canva Renderer**: Native template autofill via API
+✅ **Canva Renderer**: Native template autofill via Connect API
 ✅ **Planner Agent**: Strict JSON with constraints (headline ≤7 words, CTA whitelist)
+✅ **OAuth2 Flow**: Secure Canva authentication with automatic token refresh
 
 ## 📦 Tech Stack
 
 - **Frontend**: Streamlit (Python web framework)
 - **AI**: OpenAI GPT-4 + DALL-E 3
 - **Database**: PostgreSQL (Supabase)
-- **Rendering**: Canva API
+- **Rendering**: Canva Connect API (OAuth2 + Autofill)
 - **OCR**: Tesseract
 - **Color Science**: ColorMath (ΔE calculations)
 - **Payments**: Stripe
+- **Integration**: Canva Connect API v1 with OAuth2
 
 ## 🏗️ Architecture
 

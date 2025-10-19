@@ -12,7 +12,8 @@ from app.core.planner_v2 import planner_v2
 from app.core.gen_openai import image_generator
 from app.core.ocr_validator import ocr_validator
 from app.core.logo_engine import logo_engine
-from app.core.renderer_canva import canva_renderer
+from app.core.renderer_canva import CanvaRenderer
+from app.core.canva_oauth_bridge import canva_oauth_bridge, render_canva_auth_button
 from app.core.validator_v2 import validator_v2
 from app.infra.billing import billing_manager
 from app.infra.logging import get_logger
@@ -24,6 +25,9 @@ st.set_page_config(page_title="Generate Assets v2", page_icon="🎨", layout="wi
 # Initialize session state
 if "org_id" not in st.session_state:
     st.session_state.org_id = "00000000-0000-0000-0000-000000000001"
+
+if "user_id" not in st.session_state:
+    st.session_state.user_id = "default_user"
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -41,6 +45,11 @@ def main():
 
     # Brand kit selection
     st.sidebar.header("⚙️ Settings")
+
+    # Canva connection status
+    st.sidebar.markdown("### 🔗 Canva")
+    render_canva_auth_button()
+    st.sidebar.markdown("---")
 
     try:
         brand_kits = brand_kit_manager.get_brand_kits_by_org(st.session_state.org_id)
@@ -326,13 +335,25 @@ def main():
                     # Step 2: Create design in Canva
                     st.write("2️⃣ Creating design in Canva...")
 
+                    # Check Canva authentication
+                    if not canva_oauth_bridge.is_authenticated():
+                        raise ValueError("Please connect to Canva first (see sidebar)")
+
+                    # Get access token
+                    access_token = canva_oauth_bridge.get_access_token()
+                    if not access_token:
+                        raise ValueError("Failed to get Canva access token. Please reconnect.")
+
+                    # Initialize renderer with token
+                    canva_renderer = CanvaRenderer(access_token=access_token)
+
                     # Get template ID
                     template_key = f"{st.session_state.current_plan['channel']}_{st.session_state.current_plan['aspect_ratio']}"
                     template_id = tokens.templates.get(template_key)
 
                     if not template_id:
-                        st.warning(f"No template for {template_key}, using default")
-                        template_id = tokens.templates.get("ig_1x1", "default_template")
+                        st.warning(f"No template for {template_key}. Configure templates in the Canva Templates page.")
+                        raise ValueError(f"No template configured for {template_key}")
 
                     # Prepare content
                     content = {

@@ -46,14 +46,25 @@ class Settings(BaseSettings):
     CREDITS_PER_GENERATION: int = 10
     CREDITS_PER_COMPOSITION: int = 5
     DEFAULT_MONTHLY_CREDITS: int = 300
-    
+
+    # Canva Configuration
+    CANVA_CLIENT_ID: Optional[str] = None
+    CANVA_CLIENT_SECRET: Optional[str] = None
+    CANVA_REDIRECT_URI: Optional[str] = "http://localhost:8501/canva/callback"
+    CANVA_API_BASE: str = "https://api.canva.com/rest/v1"
+
     @property
     def is_production(self) -> bool:
         return self.APP_ENV.lower() == "production"
-    
+
     @property
     def is_development(self) -> bool:
         return self.APP_ENV.lower() == "development"
+
+    @property
+    def canva_configured(self) -> bool:
+        """Check if Canva credentials are configured"""
+        return bool(self.CANVA_CLIENT_ID and self.CANVA_CLIENT_SECRET)
 
 
 # Global settings instance

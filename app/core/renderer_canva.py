@@ -1,6 +1,6 @@
 """
 Canva Renderer
-Create designs via Canva API using templates with strict placeholder contract
+Create designs via Canva Connect API using templates with strict placeholder contract
 Replaces manual overlay system with native Canva rendering
 """
 from typing import Dict, Any, Optional, List
@@ -9,6 +9,7 @@ import time
 from uuid import UUID
 from app.core.brand_brain import BrandTokens
 from app.infra.db import db
+from app.infra.config import settings
 from app.infra.logging import get_logger
 
 logger = get_logger(__name__)
@@ -17,18 +18,8 @@ logger = get_logger(__name__)
 class CanvaRenderer:
     """
     Native Canva rendering engine
-    Creates designs using Canva's Autofill API
+    Creates designs using Canva Connect API (Autofill)
     """
-
-    CANVA_API_BASE = "https://api.canva.com/v1"
-
-    # Template placeholder contract
-    PLACEHOLDER_HEADLINE = "HEADLINE"
-    PLACEHOLDER_SUBHEAD = "SUBHEAD"
-    PLACEHOLDER_CTA = "CTA_TEXT"
-    PLACEHOLDER_PRODUCT_IMAGE = "PRODUCT_IMAGE"
-    PLACEHOLDER_BG_IMAGE = "BG_IMAGE"
-    PLACEHOLDER_PALETTE = "PALETTE_MODE"
 
     def __init__(self, access_token: Optional[str] = None):
         """
@@ -37,6 +28,8 @@ class CanvaRenderer:
         Args:
             access_token: Canva OAuth2 access token (or set via environment)
         """
+        self.api_base = settings.CANVA_API_BASE
+
         self.access_token = access_token
         self.session = requests.Session()
         if self.access_token:
@@ -44,6 +37,14 @@ class CanvaRenderer:
                 "Authorization": f"Bearer {self.access_token}",
                 "Content-Type": "application/json"
             })
+
+    # Template placeholder contract
+    PLACEHOLDER_HEADLINE = "HEADLINE"
+    PLACEHOLDER_SUBHEAD = "SUBHEAD"
+    PLACEHOLDER_CTA = "CTA_TEXT"
+    PLACEHOLDER_PRODUCT_IMAGE = "PRODUCT_IMAGE"
+    PLACEHOLDER_BG_IMAGE = "BG_IMAGE"
+    PLACEHOLDER_PALETTE = "PALETTE_MODE"
 
     def set_access_token(self, access_token: str):
         """Update access token after OAuth2 flow"""
@@ -242,30 +243,50 @@ class CanvaRenderer:
             Design object from Canva API
         """
         try:
-            # Canva Autofill API endpoint
-            url = f"{self.CANVA_API_BASE}/designs"
+            # Canva Connect API - Autofill endpoint
+            url = f"{self.api_base}/autofills"
 
             payload = {
-                "design_type": "custom",
-                "template_id": template_id,
-                "autofill": autofill_data
+                "brand_template_id": template_id,
+                "title": "AI Generated Design",
+                "data": autofill_data["data"]
             }
 
             response = self.session.post(url, json=payload, timeout=30)
             response.raise_for_status()
 
-            design = response.json()
+            result = response.json()
+
+            # Extract design info from autofill response with safeguards
+            job = result.get("job") or {}
+            job_id = job.get("id")
+            design_obj = result.get("design") or {}
+            edit_url = design_obj.get("url", "")
+
+            if not job_id:
+                logger.error(f"Canva autofill response missing job id: {result}")
+                raise ValueError("Canva autofill response missing job id")
+
+            design = {
+                "id": job_id,
+                "urls": {
+                    "edit_url": edit_url
+                },
+                "thumbnail": design_obj
+            }
+
             return design
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Canva API error: {str(e)}")
-            if hasattr(e.response, 'text'):
-                logger.error(f"Response: {e.response.text}")
+            resp = getattr(e, 'response', None)
+            if resp is not None and hasattr(resp, 'text'):
+                logger.error(f"Response: {resp.text}")
             raise ValueError(f"Failed to create Canva design: {str(e)}")
 
     def _export_design(self, design_id: str, format: str = "png", quality: str = "high") -> str:
         """
-        Export design as image
+        Export design as image using Canva Connect API
 
         Args:
             design_id: Canva design ID
@@ -276,42 +297,45 @@ class CanvaRenderer:
             Export URL
         """
         try:
-            url = f"{self.CANVA_API_BASE}/designs/{design_id}/export"
+            url = f"{self.api_base}/exports"
 
             payload = {
-                "format": format,
-                "quality": quality,
-                "pages": ["all"]
+                "design_id": design_id,
+                "format": {
+                    "type": format
+                }
             }
 
             response = self.session.post(url, json=payload, timeout=60)
             response.raise_for_status()
 
             export_job = response.json()
-            job_id = export_job["id"]
+            job_id = export_job["job"]["id"]
 
             # Poll for completion
-            export_url = self._poll_export_job(design_id, job_id)
+            export_url = self._poll_export_job(job_id)
 
             return export_url
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Canva export error: {str(e)}")
+            resp = getattr(e, 'response', None)
+            if resp is not None and hasattr(resp, 'text'):
+                logger.error(f"Response: {resp.text}")
             raise ValueError(f"Failed to export Canva design: {str(e)}")
 
-    def _poll_export_job(self, design_id: str, job_id: str, max_attempts: int = 30) -> str:
+    def _poll_export_job(self, job_id: str, max_attempts: int = 30) -> str:
         """
         Poll export job until complete
 
         Args:
-            design_id: Canva design ID
             job_id: Export job ID
             max_attempts: Maximum polling attempts
 
         Returns:
             Export URL when ready
         """
-        url = f"{self.CANVA_API_BASE}/designs/{design_id}/export/{job_id}"
+        url = f"{self.api_base}/exports/{job_id}"
 
         for attempt in range(max_attempts):
             try:
@@ -319,15 +343,15 @@ class CanvaRenderer:
                 response.raise_for_status()
 
                 job_status = response.json()
-                status = job_status.get("status")
+                status = job_status["job"]["status"]
 
                 if status == "success":
-                    export_url = job_status.get("urls", {}).get("download_url")
+                    export_url = job_status["job"]["url"]
                     logger.info(f"Export complete: {export_url}")
                     return export_url
 
                 elif status == "failed":
-                    error = job_status.get("error", "Unknown error")
+                    error = job_status["job"].get("error", {}).get("message", "Unknown error")
                     raise ValueError(f"Export failed: {error}")
 
                 # Still processing, wait and retry
@@ -391,7 +415,7 @@ class CanvaRenderer:
 
     def list_user_designs(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
-        List user's Canva designs
+        List user's Canva designs using Connect API
 
         Args:
             limit: Maximum number of designs to return
@@ -403,14 +427,14 @@ class CanvaRenderer:
             if not self.access_token:
                 raise ValueError("Canva access token not set")
 
-            url = f"{self.CANVA_API_BASE}/designs"
+            url = f"{self.api_base}/designs"
             params = {"limit": limit}
 
             response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()
 
             data = response.json()
-            designs = data.get("designs", [])
+            designs = data.get("items", [])
 
             return designs
 
@@ -418,31 +442,60 @@ class CanvaRenderer:
             logger.error(f"Failed to list designs: {str(e)}")
             return []
 
-    def delete_design(self, design_id: str) -> bool:
+    def list_brand_templates(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
-        Delete a Canva design
+        List available brand templates
 
         Args:
-            design_id: Canva design ID
+            limit: Maximum number of templates to return
 
         Returns:
-            True if successful
+            List of brand template objects
         """
         try:
             if not self.access_token:
                 raise ValueError("Canva access token not set")
 
-            url = f"{self.CANVA_API_BASE}/designs/{design_id}"
+            url = f"{self.api_base}/brand-templates"
+            params = {"limit": limit}
 
-            response = self.session.delete(url, timeout=10)
+            response = self.session.get(url, params=params, timeout=10)
             response.raise_for_status()
 
-            logger.info(f"Deleted Canva design {design_id}")
-            return True
+            data = response.json()
+            templates = data.get("items", [])
+
+            logger.info(f"Found {len(templates)} brand templates")
+            return templates
 
         except Exception as e:
-            logger.error(f"Failed to delete design: {str(e)}")
-            return False
+            logger.error(f"Failed to list brand templates: {str(e)}")
+            return []
+
+    def get_user_profile(self) -> Optional[Dict[str, Any]]:
+        """
+        Get Canva user profile
+
+        Returns:
+            User profile data or None
+        """
+        try:
+            if not self.access_token:
+                raise ValueError("Canva access token not set")
+
+            url = f"{self.api_base}/users/me/profile"
+
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+
+            profile = response.json()
+            logger.info(f"Retrieved user profile: {profile.get('display_name')}")
+
+            return profile
+
+        except Exception as e:
+            logger.error(f"Failed to get user profile: {str(e)}")
+            return None
 
 
 # OAuth2 helper functions
