@@ -3,10 +3,11 @@ Canva Template Management
 Browse and configure Canva templates for brand kits
 """
 import streamlit as st
+from uuid import UUID
 from app.core.canva_oauth_bridge import canva_oauth_bridge, render_canva_auth_button
 from app.core.renderer_canva import CanvaRenderer
 from app.core.brandkit import brand_kit_manager
-from app.core.brand_brain import brand_brain
+from app.core.brand_brain import brand_brain, BrandTokens
 from app.infra.logging import get_logger
 
 logger = get_logger(__name__)
@@ -18,7 +19,7 @@ if "org_id" not in st.session_state:
     st.session_state.org_id = "00000000-0000-0000-0000-000000000001"
 
 if "user_id" not in st.session_state:
-    st.session_state.user_id = "default_user"
+    st.session_state.user_id = "00000000-0000-0000-0000-000000000011"  # Demo user UUID
 
 
 def main():
@@ -62,7 +63,12 @@ def main():
     st.sidebar.header("⚙️ Settings")
 
     try:
-        brand_kits = brand_kit_manager.get_brand_kits_by_org(st.session_state.org_id)
+        # Convert org_id to UUID if it's a string
+        org_id = st.session_state.org_id
+        if isinstance(org_id, str):
+            org_id = UUID(org_id)
+
+        brand_kits = brand_kit_manager.get_brand_kits_by_org(org_id)
 
         if not brand_kits:
             st.warning("⚠️ No brand kits found. Please create one first.")
@@ -85,9 +91,15 @@ def main():
 
         if not brain_data:
             st.sidebar.warning("⚠️ Brand Brain not configured")
-            tokens = brand_brain.BrandTokens.get_default_tokens()
+            tokens = BrandTokens.get_default_tokens()
         else:
-            tokens = brain_data["tokens"]
+            # Handle tuple response from database (psycopg row_factory issue)
+            if isinstance(brain_data, tuple):
+                logger.error(f"brain_data is tuple, not dict: {type(brain_data)}")
+                st.sidebar.warning("⚠️ Brand Brain data format issue. Using defaults.")
+                tokens = BrandTokens.get_default_tokens()
+            else:
+                tokens = brain_data["tokens"]
 
     except Exception as e:
         logger.error(f"Error loading brand kits: {str(e)}")

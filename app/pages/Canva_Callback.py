@@ -51,6 +51,9 @@ def main():
 
         try:
             with st.spinner("Exchanging authorization code for access token..."):
+                # DEBUG: log code/state for troubleshooting
+                logger.info(f"OAuth callback code={code} state={state}")
+
                 # Exchange code for token
                 token_data = canva_oauth.exchange_code_for_token(code)
 
@@ -84,7 +87,16 @@ def main():
                     st.switch_page("pages/2_Generate_V2.py")
 
         except Exception as e:
-            logger.error(f"OAuth callback error: {str(e)}")
+            # If the exception contains a response with text, include it in logs
+            resp_text = None
+            try:
+                resp = getattr(e, 'response', None)
+                if resp is not None and hasattr(resp, 'text'):
+                    resp_text = resp.text
+            except Exception:
+                resp_text = None
+
+            logger.error(f"OAuth callback error: {str(e)} | response: {resp_text}")
             st.error(f"❌ Failed to complete authorization: {str(e)}")
 
             st.markdown("---")

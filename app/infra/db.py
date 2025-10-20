@@ -53,14 +53,33 @@ class Database:
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, params)
-                return cur.fetchone()
+                row = cur.fetchone()
+                if row is None:
+                    return None
+
+                # If the driver returned a tuple/sequence instead of a dict, convert
+                if not isinstance(row, dict):
+                    colnames = [d.name for d in cur.description]
+                    return dict(zip(colnames, row))
+
+                return row
     
     def fetch_all(self, query: str, params: Optional[tuple] = None) -> List[Dict[str, Any]]:
         """Fetch all rows"""
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, params)
-                return cur.fetchall()
+                rows = cur.fetchall()
+
+                if not rows:
+                    return []
+
+                # If rows are tuples/sequences instead of dicts, convert them
+                if not isinstance(rows[0], dict):
+                    colnames = [d.name for d in cur.description]
+                    return [dict(zip(colnames, r)) for r in rows]
+
+                return rows
     
     def insert(self, table: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Insert a row and return the inserted data"""

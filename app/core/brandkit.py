@@ -132,31 +132,54 @@ class BrandKitManager:
                 "SELECT * FROM brand_kits WHERE org_id = %s ORDER BY created_at DESC",
                 (str(org_id),)
             )
-            
+
             brand_kits = []
             for r in results:
-                # Handle both string and dict (psycopg may auto-parse JSONB)
-                colors_data = r["colors"]
+                # Handle both string and dict for JSONB columns
+                colors_data = r.get("colors") if isinstance(r, dict) else None
+                if colors_data is None:
+                    logger.error(f"Skipping brand kit - no colors data")
+                    continue
+
                 if isinstance(colors_data, str):
                     colors_data = json.loads(colors_data)
-                
-                style_data = r["style"]
+                elif isinstance(colors_data, tuple):
+                    # This shouldn't happen but handle it
+                    logger.error(f"colors_data is tuple: {colors_data}")
+                    continue
+
+                style_data = r.get("style") if isinstance(r, dict) else None
+                if style_data is None:
+                    logger.error(f"Skipping brand kit - no style data")
+                    continue
+
                 if isinstance(style_data, str):
                     style_data = json.loads(style_data)
-                
-                brand_kits.append(BrandKit(
-                    id=r["id"],
-                    org_id=r["org_id"],
-                    name=r["name"],
-                    colors=BrandColors(**colors_data),
-                    style=BrandStyle(**style_data),
-                    created_at=r["created_at"]
-                ))
+                elif isinstance(style_data, tuple):
+                    logger.error(f"style_data is tuple: {style_data}")
+                    continue
+
+                try:
+                    brand_kits.append(BrandKit(
+                        id=r["id"],
+                        org_id=r["org_id"],
+                        name=r["name"],
+                        colors=BrandColors(**colors_data),
+                        style=BrandStyle(**style_data),
+                        created_at=r["created_at"]
+                    ))
+                except Exception as e:
+                    logger.warning(f"Skipping brand kit '{r.get('name', 'unknown')}': {e}")
+                    continue
             
             return brand_kits
-            
+
         except Exception as e:
             logger.error(f"Error getting brand kits: {str(e)}")
+            # If we got at least some brand kits, return them instead of failing completely
+            if 'brand_kits' in locals() and brand_kits:
+                logger.warning(f"Returning {len(brand_kits)} brand kits despite error")
+                return brand_kits
             raise
     
     def update_brand_kit(

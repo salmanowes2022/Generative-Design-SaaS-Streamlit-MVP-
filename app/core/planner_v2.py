@@ -8,6 +8,7 @@ import json
 import openai
 from uuid import UUID
 from app.core.brand_brain import BrandTokens, BrandPolicies, brand_brain
+from app.infra.config import settings
 from app.infra.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,8 +27,8 @@ class PlannerV2:
         Args:
             api_key: OpenAI API key (or uses environment variable)
         """
-        if api_key:
-            openai.api_key = api_key
+        # Use provided API key, or fall back to settings
+        openai.api_key = api_key or settings.OPENAI_API_KEY
         self.model = "gpt-4-turbo-preview"  # Use latest GPT-4 with JSON mode
 
     def chat_to_plan(

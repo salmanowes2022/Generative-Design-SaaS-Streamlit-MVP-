@@ -4,7 +4,12 @@ Uses the working backend server for OAuth, stores tokens for Streamlit use
 """
 import streamlit as st
 import requests
+import json
+import os
+import base64
+from pathlib import Path
 from typing import Optional, Dict, Any
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from app.infra.config import settings
 from app.infra.logging import get_logger
 
@@ -19,6 +24,45 @@ class CanvaOAuthBridge:
     def __init__(self):
         self.backend_url = "http://127.0.0.1:3001"
         self.client_id = settings.CANVA_CLIENT_ID
+        # Path to the backend database where tokens are stored
+        self.db_path = Path(__file__).parent.parent.parent / "canva-connect-api-starter-kit" / "demos" / "playground" / "backend" / "db.json"
+        # Path to .env file for encryption key
+        self.env_path = Path(__file__).parent.parent.parent / "canva-connect-api-starter-kit" / "demos" / "playground" / ".env"
+
+    def _get_encryption_key(self) -> Optional[bytes]:
+        """Get the DATABASE_ENCRYPTION_KEY from .env file"""
+        try:
+            if self.env_path.exists():
+                with open(self.env_path, 'r') as f:
+                    for line in f:
+                        if line.startswith('DATABASE_ENCRYPTION_KEY='):
+                            key_b64 = line.split('=', 1)[1].strip()
+                            return base64.b64decode(key_b64)
+            logger.error("Could not find DATABASE_ENCRYPTION_KEY in .env file")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get encryption key: {str(e)}")
+            return None
+
+    def _decrypt_token(self, encrypted_data: Dict[str, str]) -> Optional[str]:
+        """Decrypt token using AES-GCM (same as backend)"""
+        try:
+            key = self._get_encryption_key()
+            if not key:
+                return None
+
+            iv = base64.b64decode(encrypted_data['iv'])
+            ciphertext = base64.b64decode(encrypted_data['encryptedData'])
+
+            aesgcm = AESGCM(key)
+            decrypted = aesgcm.decrypt(iv, ciphertext, None)
+
+            # Parse the decrypted JSON to get access_token
+            token_data = json.loads(decrypted.decode('utf-8'))
+            return token_data.get('access_token')
+        except Exception as e:
+            logger.error(f"Failed to decrypt token: {str(e)}")
+            return None
 
     def get_authorization_url(self) -> str:
         """
@@ -34,45 +78,88 @@ class CanvaOAuthBridge:
 
     def is_authenticated(self) -> bool:
         """
-        Check if user has valid token in backend
+        Check if user has valid token in backend or database file
 
         Returns:
             True if authenticated
         """
+        # First try HTTP endpoint
         try:
             response = requests.get(
                 f"{self.backend_url}/isauthorized",
-                timeout=5
+                timeout=2
             )
-            return response.status_code == 200
+            if response.status_code == 200:
+                logger.info("User is authenticated (via HTTP)")
+                return True
         except Exception as e:
-            logger.error(f"Auth check failed: {str(e)}")
-            return False
+            logger.warning(f"HTTP auth check failed: {str(e)}, checking database file...")
+
+        # Fallback: Check database file directly
+        try:
+            if self.db_path.exists():
+                with open(self.db_path, 'r') as f:
+                    db_data = json.load(f)
+                    users = db_data.get('users', [])
+                    if users and len(users) > 0:
+                        # Check if any user has a token
+                        has_token = any(user.get('token') for user in users)
+                        if has_token:
+                            logger.info(f"User is authenticated (found {len(users)} user(s) with tokens in db.json)")
+                            return True
+        except Exception as e:
+            logger.error(f"Database file check failed: {str(e)}")
+
+        logger.info("User is not authenticated")
+        return False
 
     def get_access_token(self) -> Optional[str]:
         """
-        Get access token from backend
+        Get access token from backend or database file
 
         Returns:
             Access token or None
         """
+        # First try HTTP endpoint
         try:
             response = requests.get(
                 f"{self.backend_url}/token",
-                timeout=5
+                timeout=2
             )
 
             if response.status_code == 200:
                 token = response.text
-                logger.info("Retrieved access token from backend")
+                logger.info("Retrieved access token from backend (via HTTP)")
                 return token
-            else:
-                logger.warning("No token available")
-                return None
-
         except Exception as e:
-            logger.error(f"Failed to get token: {str(e)}")
-            return None
+            logger.warning(f"HTTP token fetch failed: {str(e)}, checking database file...")
+
+        # Fallback: Read and decrypt token from database file
+        try:
+            if self.db_path.exists():
+                with open(self.db_path, 'r') as f:
+                    db_data = json.load(f)
+                    users = db_data.get('users', [])
+
+                    if users and len(users) > 0:
+                        # Get the first user's token (in production, match by user ID)
+                        user = users[0]
+                        encrypted_token = user.get('token')
+
+                        if encrypted_token:
+                            access_token = self._decrypt_token(encrypted_token)
+                            if access_token:
+                                logger.info("Retrieved and decrypted access token from db.json")
+                                return access_token
+                            else:
+                                logger.error("Failed to decrypt token")
+                        else:
+                            logger.error("No token found in user data")
+        except Exception as e:
+            logger.error(f"Database file token fetch failed: {str(e)}")
+
+        logger.error("Failed to get access token from any source")
+        return None
 
     def revoke_token(self) -> bool:
         """
