@@ -313,8 +313,7 @@ class BrandBrain:
                 data={
                     'tokens': json.dumps(tokens.to_dict()),
                     'policies': json.dumps(policies.to_dict()),
-                    'version': 2,
-                    'updated_at': datetime.now()
+                    'version': 2
                 },
                 where_clause='id = %s',
                 where_params=(str(brand_kit_id),)

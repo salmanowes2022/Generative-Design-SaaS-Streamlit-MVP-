@@ -161,6 +161,48 @@ class CanvaOAuthBridge:
         logger.error("Failed to get access token from any source")
         return None
 
+    def list_brand_templates(self) -> Optional[Dict[str, Any]]:
+        """
+        List brand templates from Canva
+
+        Returns:
+            Dict with template info or None if failed
+            {
+                "items": [
+                    {
+                        "id": "template_id",
+                        "name": "Template Name",
+                        "thumbnail": {"url": "..."}
+                    }
+                ],
+                "continuation": "..."
+            }
+        """
+        try:
+            access_token = self.get_access_token()
+            if not access_token:
+                logger.error("No access token available for brand templates list")
+                return None
+
+            api_base = settings.CANVA_API_BASE
+            url = f"{api_base}/brand-templates"
+
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+
+            data = response.json()
+            logger.info(f"Retrieved {len(data.get('items', []))} brand templates from Canva")
+            return data
+
+        except Exception as e:
+            logger.error(f"Failed to list brand templates: {str(e)}")
+            return None
+
     def revoke_token(self) -> bool:
         """
         Revoke access token

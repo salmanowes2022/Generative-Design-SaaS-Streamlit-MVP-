@@ -196,7 +196,7 @@ class CanvaRenderer:
         }
         primary_color = color_mapping[palette_mode]
 
-        # Build autofill data
+        # Build autofill data (Note: Canva Autofill API doesn't support 'color' type)
         autofill_data = {
             "data": {
                 self.PLACEHOLDER_HEADLINE: {
@@ -214,11 +214,8 @@ class CanvaRenderer:
                 self.PLACEHOLDER_BG_IMAGE: {
                     "type": "image",
                     "image_url": content.get("bg_image_url")
-                },
-                "PRIMARY_COLOR": {
-                    "type": "color",
-                    "value": primary_color
                 }
+                # Note: PRIMARY_COLOR removed - Canva Autofill API only supports: text, image, chart
             }
         }
 
@@ -281,7 +278,8 @@ class CanvaRenderer:
             logger.error(f"Canva API error: {str(e)}")
             resp = getattr(e, 'response', None)
             if resp is not None and hasattr(resp, 'text'):
-                logger.error(f"Response: {resp.text}")
+                logger.error(f"Response body: {resp.text}")
+                logger.error(f"Request payload was: {payload}")
             raise ValueError(f"Failed to create Canva design: {str(e)}")
 
     def _export_design(self, design_id: str, format: str = "png", quality: str = "high") -> str:

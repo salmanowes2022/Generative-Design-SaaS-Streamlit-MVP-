@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     CANVA_CLIENT_ID: Optional[str] = None
     CANVA_CLIENT_SECRET: Optional[str] = None
     CANVA_REDIRECT_URI: Optional[str] = "http://localhost:8501/canva/callback"
+    # IMPORTANT: Must use /rest/v1 not /v1 for brand templates endpoint
     CANVA_API_BASE: str = "https://api.canva.com/rest/v1"
 
     @property
