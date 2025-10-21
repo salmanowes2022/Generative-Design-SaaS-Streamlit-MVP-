@@ -134,17 +134,13 @@ def main():
     
     # Footer
     st.markdown("---")
-    footer_col1, footer_col2, footer_col3 = st.columns(3)
-    
+    footer_col1, footer_col2 = st.columns(2)
+
     with footer_col1:
         st.markdown(f"**Environment**: {settings.APP_ENV}")
-    
+
     with footer_col2:
         st.markdown(f"**User**: {st.session_state.user_email}")
-    
-    with footer_col3:
-        if st.button("💳 Manage Billing"):
-            st.switch_page("pages/5_Billing.py")
 
 
 if __name__ == "__main__":
