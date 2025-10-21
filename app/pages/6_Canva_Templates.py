@@ -86,20 +86,13 @@ def main():
 
         selected_kit = brand_kit_options[selected_kit_name]
 
-        # Load Brand Brain
-        brain_data = brand_brain.get_brand_brain(selected_kit.id)
+        # Load Brand Brain (returns tuple of (tokens, policies))
+        tokens, policies = brand_brain.get_brand_brain(selected_kit.id)
 
-        if not brain_data:
+        if not tokens:
             st.sidebar.warning("⚠️ Brand Brain not configured")
             tokens = BrandTokens.get_default_tokens()
-        else:
-            # Handle tuple response from database (psycopg row_factory issue)
-            if isinstance(brain_data, tuple):
-                logger.error(f"brain_data is tuple, not dict: {type(brain_data)}")
-                st.sidebar.warning("⚠️ Brand Brain data format issue. Using defaults.")
-                tokens = BrandTokens.get_default_tokens()
-            else:
-                tokens = brain_data["tokens"]
+            policies = None
 
     except Exception as e:
         logger.error(f"Error loading brand kits: {str(e)}")
@@ -201,7 +194,7 @@ def main():
                         brand_brain.save_brand_brain(
                             selected_kit.id,
                             tokens=tokens,
-                            policies=brain_data.get("policies") if brain_data else None
+                            policies=policies
                         )
 
                         st.success("Template mapping removed")
@@ -254,7 +247,7 @@ def main():
                 brand_brain.save_brand_brain(
                     selected_kit.id,
                     tokens=tokens,
-                    policies=brain_data.get("policies") if brain_data else None
+                    policies=policies
                 )
 
                 st.success(f"✅ Saved mapping for {template_key}")

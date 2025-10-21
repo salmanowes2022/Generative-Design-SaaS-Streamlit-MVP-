@@ -43,7 +43,7 @@ class CanvaRenderer:
     PLACEHOLDER_SUBHEAD = "SUBHEAD"
     PLACEHOLDER_CTA = "CTA_TEXT"
     PLACEHOLDER_PRODUCT_IMAGE = "PRODUCT_IMAGE"
-    PLACEHOLDER_BG_IMAGE = "BG_IMAGE"
+    PLACEHOLDER_BG_IMAGE = "MAIN_IMAGE"  # Changed to MAIN_IMAGE for new template
     PLACEHOLDER_PALETTE = "PALETTE_MODE"
 
     def set_access_token(self, access_token: str):
@@ -52,6 +52,87 @@ class CanvaRenderer:
         self.session.headers.update({
             "Authorization": f"Bearer {self.access_token}"
         })
+
+    def upload_asset(self, image_url: str, name: str = "AI Generated Image") -> Optional[str]:
+        """
+        Upload an image to Canva as an asset and return the asset ID
+
+        Args:
+            image_url: URL of the image to upload
+            name: Name for the asset
+
+        Returns:
+            Asset ID if successful, None otherwise
+        """
+        try:
+            import base64
+
+            # Download the image first
+            logger.info(f"Downloading image from {image_url}")
+            img_response = requests.get(image_url, timeout=30)
+            img_response.raise_for_status()
+            image_data = img_response.content
+
+            # Prepare upload headers
+            name_base64 = base64.b64encode(name.encode('utf-8')).decode('utf-8')
+
+            # Create asset upload job
+            url = f"{self.api_base}/asset-uploads"
+
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/octet-stream",
+                "Asset-Upload-Metadata": f'{{"name_base64": "{name_base64}"}}'
+            }
+
+            logger.info("Uploading image to Canva...")
+            response = requests.post(url, headers=headers, data=image_data, timeout=60)
+            response.raise_for_status()
+
+            result = response.json()
+            job_id = result.get("job", {}).get("id")
+
+            if not job_id:
+                logger.error(f"No job ID in upload response: {result}")
+                return None
+
+            logger.info(f"Upload job created: {job_id}")
+
+            # Poll for job completion
+            status_url = f"{self.api_base}/asset-uploads/{job_id}"
+            max_attempts = 30
+
+            for attempt in range(max_attempts):
+                time.sleep(2)  # Wait 2 seconds between polls
+
+                status_response = self.session.get(status_url, timeout=10)
+                status_response.raise_for_status()
+                status_result = status_response.json()
+
+                job_status = status_result.get("job", {}).get("status")
+
+                if job_status == "success":
+                    asset_id = status_result.get("job", {}).get("asset", {}).get("id")
+                    if asset_id:
+                        logger.info(f"Asset uploaded successfully: {asset_id}")
+                        return asset_id
+                    else:
+                        logger.error(f"Job succeeded but no asset ID: {status_result}")
+                        return None
+
+                elif job_status == "failed":
+                    error = status_result.get("job", {}).get("error")
+                    logger.error(f"Asset upload failed: {error}")
+                    return None
+
+                logger.info(f"Upload job status: {job_status} (attempt {attempt + 1}/{max_attempts})")
+
+            logger.error(f"Asset upload timed out after {max_attempts} attempts")
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to upload asset: {str(e)}")
+            return None
 
     def create_design(
         self,
@@ -94,6 +175,27 @@ class CanvaRenderer:
 
             # Validate content
             self._validate_content(content, tokens)
+
+            # Upload background image to Canva and get asset_id
+            bg_image_url = content.get("bg_image_url")
+            if bg_image_url:
+                logger.info("Uploading background image to Canva...")
+                bg_asset_id = self.upload_asset(bg_image_url, "AI Generated Background")
+                if bg_asset_id:
+                    # Replace image_url with asset_id in content
+                    content["bg_asset_id"] = bg_asset_id
+                else:
+                    logger.warning("Failed to upload background image, falling back to image_url")
+
+            # Upload product image if present
+            product_image_url = content.get("product_image_url")
+            if product_image_url:
+                logger.info("Uploading product image to Canva...")
+                product_asset_id = self.upload_asset(product_image_url, "Product Image")
+                if product_asset_id:
+                    content["product_asset_id"] = product_asset_id
+                else:
+                    logger.warning("Failed to upload product image, falling back to image_url")
 
             # Prepare autofill data
             autofill_data = self._prepare_autofill_data(content, tokens)
@@ -210,17 +312,30 @@ class CanvaRenderer:
                 self.PLACEHOLDER_CTA: {
                     "type": "text",
                     "text": content.get("cta_text", "Learn More")
-                },
-                self.PLACEHOLDER_BG_IMAGE: {
-                    "type": "image",
-                    "image_url": content.get("bg_image_url")
                 }
                 # Note: PRIMARY_COLOR removed - Canva Autofill API only supports: text, image, chart
             }
         }
 
-        # Add optional product image
-        if content.get("product_image_url"):
+        # Add background image - prefer asset_id, fallback to image_url
+        if content.get("bg_asset_id"):
+            autofill_data["data"][self.PLACEHOLDER_BG_IMAGE] = {
+                "type": "image",
+                "asset_id": content["bg_asset_id"]
+            }
+        elif content.get("bg_image_url"):
+            autofill_data["data"][self.PLACEHOLDER_BG_IMAGE] = {
+                "type": "image",
+                "image_url": content["bg_image_url"]
+            }
+
+        # Add optional product image - prefer asset_id, fallback to image_url
+        if content.get("product_asset_id"):
+            autofill_data["data"][self.PLACEHOLDER_PRODUCT_IMAGE] = {
+                "type": "image",
+                "asset_id": content["product_asset_id"]
+            }
+        elif content.get("product_image_url"):
             autofill_data["data"][self.PLACEHOLDER_PRODUCT_IMAGE] = {
                 "type": "image",
                 "image_url": content["product_image_url"]
@@ -248,6 +363,10 @@ class CanvaRenderer:
                 "title": "AI Generated Design",
                 "data": autofill_data["data"]
             }
+
+            logger.info(f"Sending autofill request to Canva:")
+            logger.info(f"  Template ID: {template_id}")
+            logger.info(f"  Payload: {payload}")
 
             response = self.session.post(url, json=payload, timeout=30)
             response.raise_for_status()

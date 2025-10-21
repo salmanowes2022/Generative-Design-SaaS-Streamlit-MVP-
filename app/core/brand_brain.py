@@ -107,9 +107,23 @@ class BrandPolicies:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'BrandPolicies':
         """Create from JSON dict"""
+        # Ensure voice is always a list
+        voice = data.get('voice', [])
+        if isinstance(voice, str):
+            voice = [voice]
+        elif not isinstance(voice, list):
+            voice = []
+
+        # Ensure forbid is always a list
+        forbid = data.get('forbid', [])
+        if isinstance(forbid, str):
+            forbid = [forbid]
+        elif not isinstance(forbid, list):
+            forbid = []
+
         return cls(
-            voice=data.get('voice', []),
-            forbid=data.get('forbid', [])
+            voice=voice,
+            forbid=forbid
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -347,8 +361,12 @@ class BrandBrain:
             if not result:
                 return None, None
 
-            tokens_data = result.get('tokens')
-            policies_data = result.get('policies')
+            # Handle both dict and tuple responses from psycopg
+            if isinstance(result, tuple):
+                tokens_data, policies_data = result
+            else:
+                tokens_data = result.get('tokens')
+                policies_data = result.get('policies')
 
             tokens = None
             policies = None

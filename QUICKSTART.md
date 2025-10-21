@@ -1,110 +1,143 @@
-# Quick Start Guide - Canva Integration
+# Quick Start Guide - AI Design Assistant
 
-Get your Canva integration up and running in 5 minutes!
+## System Status
 
-## Step 1: Canva App Setup (2 minutes)
+✅ **All modules integrated and tested successfully!**
 
-1. Go to https://www.canva.com/developers/apps
-2. Click **"Create an app"**
-3. Fill in app details:
-   - **App name:** Your App Name
-   - **Description:** AI-powered design generation
-4. In **Scopes**, enable:
-   - ✅ asset:read
-   - ✅ design:content:read
-   - ✅ design:content:write
-   - ✅ design:meta:read
-   - ✅ profile:read
-5. In **Redirect URIs**, add:
-   ```
-   http://localhost:8501/Canva_Callback
-   ```
-6. Save and copy your **Client ID** and **Client Secret**
+The system has been evolved with 5 new AI-powered modules for smarter, more flexible design generation.
 
-## Step 2: Configure Environment (1 minute)
+## What's New
 
-Update your `.env` file:
+### 1. Chat-Based Design Creation (💬 Chat Create)
+- Natural language design requests
+- Multi-turn conversations with brand awareness
+- Automatic design plan generation
+- Quality scoring and auto-improvement
 
-```env
-CANVA_CLIENT_ID=OC-AZn3Gq75zGyH
-CANVA_CLIENT_SECRET=your_actual_secret_here
-CANVA_REDIRECT_URI=http://localhost:8501/Canva_Callback
-CANVA_API_BASE=https://api.canva.com/rest/v1
-```
+### 2. Brand Book Parser
+- Upload PDF/DOCX brand guidelines
+- AI extraction of brand tokens (colors, fonts, logos)
+- Automatic policy detection (voice, forbidden terms)
 
-## Step 3: Run Database Migration (30 seconds)
+### 3. Template-Free Grid Renderer
+- No Canva templates required
+- Pure Python rendering with Pillow
+- 12-column responsive grid system
+- Brand-compliant layouts
 
-```bash
-python run_migration.py
-```
+### 4. Quality Scoring System
+- 5-dimensional evaluation
+- Text contrast (30%), CTA prominence (25%), Layout balance (20%), Brand accuracy (15%), Visual hierarchy (10%)
+- Automatic improvement suggestions
+- Quality gates for production
 
-You should see:
-```
-✅ Migration completed successfully!
-Created table: canva_tokens
-```
+### 5. Template Validator
+- Diagnose Canva template issues
+- Validate autofill capability
+- Actionable fix suggestions
 
-## Step 4: Start the App (30 seconds)
+## Installation
 
-```bash
-streamlit run app/streamlit_app.py
-```
+### 1. Install New Dependencies
 
-## Step 5: Connect & Test (1 minute)
+\`\`\`bash
+pip install pdfplumber python-docx
+\`\`\`
 
-### Connect Canva
+All other dependencies are already in requirements.txt.
 
-1. In the Streamlit app, go to **Canva Templates** page
-2. Click **"🔗 Connect to Canva"** in the sidebar
-3. Authorize the app in the popup
-4. See success message ✅
+### 2. Verify Installation
 
-### Test Design Generation
+\`\`\`bash
+python -c "from app.core.brandbook_parser import BrandBookParser; from app.core.chat_agent_planner import ChatAgentPlanner; from app.core.renderer_grid import GridRenderer; print('✅ All modules loaded successfully!')"
+\`\`\`
 
-1. Go to **Generate v2** page
-2. Verify "✅ Connected to Canva" in sidebar
-3. Chat: *"Create an Instagram post for our new product launch"*
-4. Review the generated plan
-5. Click **"🚀 Create Design in Canva"**
-6. Wait 30-60 seconds for:
-   - AI background generation ✓
-   - Canva design creation ✓
-   - Brand validation ✓
-7. Download your design!
+## Quick Start
 
-## Common Issues
+### Option 1: Use the Chat Interface (Recommended)
 
-### "Canva not connected"
-→ Go to Canva Templates page and click "Connect to Canva"
+1. **Start the app:**
+   \`\`\`bash
+   cd app
+   streamlit run streamlit_app.py
+   \`\`\`
 
-### "No template for ig_1x1"
-→ Go to Canva Templates → Configure tab → Add template mapping
+2. **Navigate to Chat Create:**
+   - Click the **💬 Chat Create** button on the home page
+   - Or go directly to the "3_Chat_Create" page
 
-### "Invalid scope" error
-→ Check that all 5 scopes are enabled in your Canva app
+3. **Start creating:**
+   \`\`\`
+   User: "Create a Black Friday Instagram post for 30% off sale"
 
-## Next Steps
+   Assistant: [Generates design plan with brand-compliant copy and visuals]
 
-1. **Create Brand Templates in Canva**
-   - Open Canva
-   - Create a design with placeholders: HEADLINE, SUBHEAD, CTA_TEXT, BG_IMAGE
-   - Save as Brand Template
+   [Click "Generate Design" → AI creates complete design with quality scoring]
+   \`\`\`
 
-2. **Map Templates to Channels**
-   - Go to Canva Templates page → Configure tab
-   - Add mappings for Instagram, Facebook, LinkedIn, Twitter
+### Option 2: Parse a Brand Book
 
-3. **Generate Your First Design**
-   - Use Generate v2 page
-   - Try different channels and styles
-   - Download and share!
+1. **Navigate to Onboard Brand Kit**
 
-## Need Help?
+2. **Upload your brand book** (PDF, DOCX, or TXT):
+   \`\`\`
+   Sample: sample_brandbook.txt (included in repo)
+   \`\`\`
 
-- 📖 Full docs: [CANVA_INTEGRATION.md](./CANVA_INTEGRATION.md)
-- 🐛 Issues: Check logs in `app/logs/`
-- 💬 Community: Canva Developers Forum
+3. **AI automatically extracts:**
+   - Brand colors (primary, secondary, accent)
+   - Fonts (heading, body)
+   - Logo requirements
+   - Voice & personality traits
+   - Forbidden terms
+   - Approved CTAs
+
+## Testing
+
+### Run the Test Suite
+
+\`\`\`bash
+python test_new_features.py
+\`\`\`
+
+This tests:
+- ✅ Brand book parsing
+- ✅ Chat agent planning
+- ✅ Grid rendering
+- ✅ Quality scoring
+- ⚠️ Template validation (manual - requires Canva access token)
+
+## Two Rendering Paths
+
+### Path 1: Canva Integration (Existing)
+- Uses Canva templates with autofill
+- Requires template configuration in Canva
+- **Status:** Working with asset upload, but template needs data field configuration
+
+### Path 2: Grid Renderer (New)
+- Template-free rendering
+- Pure Python with Pillow
+- **Status:** ✅ Fully functional and tested
+
+## Navigation Updates
+
+The home page now includes:
+
+\`\`\`
+[🏁 Setup Brand Kit] [💬 Chat Create] [🎨 Generate Assets] [📚 View Library]
+\`\`\`
+
+New features highlighted:
+- 💬 **Chat-Based Design** - Conversational AI assistant
+- 📖 **Brand Book Parsing** - Upload PDFs/DOCX to auto-extract
+- ✅ **Quality Scoring** - 5-dimensional quality evaluation
+
+## Support
+
+- **Full Documentation:** INTEGRATION_GUIDE.md
+- **Test Suite:** \`python test_new_features.py\`
+- **Sample Data:** sample_brandbook.txt
 
 ---
 
-**You're all set!** Start generating brand-consistent designs automatically. 🎨
+**✨ You're ready to create human-quality designs with AI!**

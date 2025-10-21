@@ -1,0 +1,156 @@
+# TechFlow Brand Guidelines
+
+## Brand Overview
+TechFlow is a modern SaaS platform for workflow automation. We help teams work smarter, not harder.
+
+## Brand Personality
+- Innovative
+- Trustworthy
+- Approachable
+- Efficient
+- Human-centered
+
+## Brand Colors
+
+### Primary Colors
+- **Primary Blue**: #4F46E5 (Indigo)
+- **Secondary Purple**: #7C3AED (Violet)
+- **Accent Orange**: #F59E0B (Amber)
+
+### Neutral Colors
+- **Text**: #111111 (Almost Black)
+- **Background**: #FFFFFF (White)
+- **Gray**: #6B7280 (Cool Gray)
+
+Minimum contrast ratio: 4.5:1 for all text
+
+## Typography
+
+### Heading Font
+- **Family**: Inter
+- **Weights**: 700 (Bold)
+- **Sizes**: 48px, 36px, 28px
+
+### Body Font
+- **Family**: Inter
+- **Weights**: 400 (Regular), 600 (Semi-bold)
+- **Size**: 16px
+
+## Logo Guidelines
+
+### Logo Usage
+- Minimum size: 128px width
+- Clear space: 1x logo height on all sides
+- Allowed positions: Top-left, Top-right, Bottom-right
+- Never distort, rotate, or outline the logo
+
+### Logo Variants
+- **Full color**: Use on light backgrounds
+- **White**: Use on dark backgrounds
+- **Monochrome**: Use when color is not available
+
+## Layout System
+
+### Grid
+- 12-column grid system
+- Gutter: 8px
+- Outer padding: 40px
+- Border radius: 16px for buttons and cards
+
+## Voice & Tone
+
+### Voice Characteristics
+- Professional but friendly
+- Clear and concise
+- Action-oriented
+- Empowering, not demanding
+
+### Forbidden Terms
+Never use these words:
+- "cheap"
+- "discount"
+- "revolutionary" (overused)
+- "limited time only"
+- "act now"
+- "don't miss out"
+
+### Approved Call-to-Actions
+Only use these CTAs:
+- "Get Started"
+- "Try Free"
+- "Learn More"
+- "Join Now"
+- "Sign Up"
+- "Start Now"
+- "Discover"
+
+## Content Guidelines
+
+### Headlines
+- Maximum 7 words
+- Lead with benefit, not feature
+- Use active voice
+- Be specific
+
+### Subheads
+- Maximum 16 words
+- Expand on headline
+- Include social proof when possible
+- End with a question to engage
+
+### Button Copy
+- 2-3 words maximum
+- Action-oriented verbs
+- Use approved CTAs only
+
+## Social Media
+
+### Instagram
+- Square (1:1): 1080x1080px
+- Portrait (4:5): 1080x1350px
+- Story (9:16): 1080x1920px
+
+### LinkedIn
+- Single image: 1200x627px
+- Carousel: 1080x1080px
+
+### Facebook
+- Feed image: 1200x630px
+- Story: 1080x1920px
+
+## Visual Style
+
+### Photography
+- Natural, authentic imagery
+- Diverse representation
+- Avoid stock photo clichés
+- Minimal staging
+
+### Illustrations
+- Clean, modern line art
+- Use brand colors
+- Consistent style across assets
+
+### Icons
+- Outlined style (not filled)
+- 2px stroke weight
+- Rounded corners
+
+## Brand in Action
+
+### Example Good Headlines
+- "Work Flows Better"
+- "Automate Your Workflow"
+- "Save 10 Hours Weekly"
+- "Built for Modern Teams"
+
+### Example Bad Headlines
+- "The Revolutionary New Platform" (forbidden term)
+- "Don't Miss This Limited Offer!" (forbidden terms)
+- "Cheap Automation Tools" (forbidden term)
+
+## Contact
+For questions about brand usage: brand@techflow.com
+
+---
+© 2025 TechFlow Inc. All rights reserved.

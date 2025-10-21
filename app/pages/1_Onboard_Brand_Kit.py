@@ -254,6 +254,68 @@ def main():
                                 examples_analysis=examples_analysis
                             )
                             st.success("✅ Brand intelligence saved! This will be used for all future designs.")
+
+                            # CRITICAL: Also save to brand_brain so Chat can use it
+                            try:
+                                from app.core.brand_brain import brand_brain, BrandTokens, BrandPolicies
+
+                                # Convert brand_intelligence to BrandTokens format
+                                visual = merged_intelligence.get("visual_identity", {})
+                                messaging = merged_intelligence.get("brand_messaging", {})
+                                imagery = merged_intelligence.get("imagery_guidelines", {})
+
+                                # Extract tokens
+                                tokens_data = {
+                                    "color": {
+                                        "primary": visual.get("primary_color", "#4F46E5"),
+                                        "secondary": visual.get("secondary_colors", ["#7C3AED"])[0] if visual.get("secondary_colors") else "#7C3AED",
+                                        "accent": visual.get("accent_colors", ["#F59E0B"])[0] if visual.get("accent_colors") else "#F59E0B",
+                                        "background": "#FFFFFF",
+                                        "text": "#111111",
+                                        "min_contrast": 4.5
+                                    },
+                                    "type": {
+                                        "heading": {
+                                            "family": visual.get("primary_font", "Inter"),
+                                            "weights": [700],
+                                            "scale": [48, 36, 28]
+                                        },
+                                        "body": {
+                                            "family": visual.get("body_font", "Inter"),
+                                            "weights": [400],
+                                            "size": 16
+                                        }
+                                    },
+                                    "logo": {
+                                        "variants": [{"name": "full", "path": "", "on": "light"}],
+                                        "min_px": 128,
+                                        "safe_zone": "1x",
+                                        "allowed_positions": ["TL", "TR", "BR"]
+                                    },
+                                    "layout": {"grid": 12, "spacing": 8, "radius": 16},
+                                    "templates": {},
+                                    "cta_whitelist": messaging.get("cta_whitelist", ["Learn More", "Get Started", "Try Free"])
+                                }
+
+                                # Extract policies
+                                policies_data = {
+                                    "voice": messaging.get("voice_attributes", ["Professional", "Trustworthy", "Innovative"]),
+                                    "forbid": messaging.get("forbidden_terms", [])
+                                }
+
+                                tokens = BrandTokens.from_dict(tokens_data)
+                                policies = BrandPolicies.from_dict(policies_data)
+
+                                # Get brand_kit_id from the first brand kit of this org
+                                brand_kits = brand_kit_manager.get_brand_kits_by_org(org_id)
+                                if brand_kits:
+                                    brand_brain.save_brand_brain(brand_kits[0].id, tokens, policies)
+                                    st.success("✅ Brand Brain updated! Chat will now use your brand book guidelines.")
+
+                            except Exception as brain_error:
+                                logger.warning(f"Could not update brand_brain: {brain_error}")
+                                st.warning(f"⚠️ Brand intelligence saved but Chat integration needs manual setup")
+
                         except Exception as save_error:
                             logger.error(f"Failed to save brand intelligence: {str(save_error)}")
                             st.warning(f"⚠️ Could not save to database: {str(save_error)}")

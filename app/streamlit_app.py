@@ -45,34 +45,36 @@ def main():
     
     with col1:
         st.markdown("""
-        ### Two-Stage Pipeline for Perfect Brand Consistency
-        
-        **Stage 1 - AI Creativity**: DALL-E 3 generates stunning backgrounds and scenes
-        
-        **Stage 2 - Brand Precision**: Deterministic overlay of your exact logos, fonts, and colors
-        
-        #### ✨ Key Features
-        - 🎨 **AI-Powered Generation** - Create unique, high-quality images
-        - 🎯 **Brand Enforcement** - Guaranteed color accuracy (Delta E < 2.0)
-        - ✅ **Validation** - Automated quality checks for every asset
-        - 💳 **Credit-Based Billing** - Pay only for what you use
-        - 📚 **Asset Library** - Organized collection of all your creations
+        ### AI-Powered Brand Design in 3 Simple Steps
+
+        **Step 1**: Upload your brand book (PDF) - AI extracts everything automatically
+
+        **Step 2**: Chat with AI - "Create a Black Friday Instagram post"
+
+        **Step 3**: Download your design - Professional, on-brand, ready to post
+
+        #### ✨ What You Get
+        - 💬 **Chat to Create** - Just describe what you need
+        - 📖 **Smart Brand Analysis** - Upload your brand book once, use forever
+        - 🎨 **Professional Designs** - Large text, real people, brand colors
+        - ⚡ **Fast** - No complex validation, just create
+        - 📚 **All Your Designs** - Saved automatically
         """)
         
-        # CTA buttons
+        # CTA buttons - Simple and clear
         st.markdown("---")
         col_a, col_b, col_c = st.columns(3)
-        
+
         with col_a:
-            if st.button("🏁 Setup Brand Kit", use_container_width=True):
+            if st.button("📖 1. Upload Brand Book", use_container_width=True, type="primary"):
                 st.switch_page("pages/1_Onboard_Brand_Kit.py")
-        
+
         with col_b:
-            if st.button("🎨 Generate Assets", use_container_width=True):
-                st.switch_page("pages/2_Generate.py")
-        
+            if st.button("💬 2. Create Designs", use_container_width=True, type="primary"):
+                st.switch_page("pages/3_Chat_Create.py")
+
         with col_c:
-            if st.button("📚 View Library", use_container_width=True):
+            if st.button("📚 3. View Library", use_container_width=True):
                 st.switch_page("pages/4_Library.py")
     
     with col2:
@@ -110,24 +112,20 @@ def main():
     # How it works section
     st.markdown("---")
     st.markdown("### 🚀 How It Works")
-    
-    step1, step2, step3, step4 = st.columns(4)
-    
+
+    step1, step2, step3 = st.columns(3)
+
     with step1:
-        st.markdown("#### 1️⃣ Setup")
-        st.write("Upload your logo, fonts, and define your color palette")
-    
+        st.markdown("#### 1️⃣ Upload Brand Book")
+        st.write("Upload your PDF brand guidelines once. AI extracts colors, fonts, voice, CTAs automatically.")
+
     with step2:
-        st.markdown("#### 2️⃣ Generate")
-        st.write("Describe your vision and let AI create beautiful backgrounds")
-    
+        st.markdown("#### 2️⃣ Chat to Create")
+        st.write("Just describe what you need: 'Create a Black Friday Instagram post'. AI does the rest.")
+
     with step3:
-        st.markdown("#### 3️⃣ Compose")
-        st.write("Apply your brand elements with pixel-perfect precision")
-    
-    with step4:
-        st.markdown("#### 4️⃣ Validate")
-        st.write("Get quality scores and download your on-brand assets")
+        st.markdown("#### 3️⃣ Download")
+        st.write("Professional design ready instantly. Large text, real people, your brand colors.")
     
     # Example gallery (placeholder)
     st.markdown("---")

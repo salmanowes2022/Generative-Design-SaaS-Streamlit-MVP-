@@ -53,7 +53,7 @@ def main():
         print("  (none)")
 
     # Update template ID
-    new_template_id = "EAG2XKYinQ8"
+    new_template_id = "EAG2aiNOtSM"
     print(f"\n🔧 Updating ig_1x1 template to: {new_template_id}")
 
     if not tokens.templates:
