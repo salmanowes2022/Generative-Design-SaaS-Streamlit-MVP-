@@ -66,18 +66,39 @@ def init_chat_agent():
 
         selected_kit = brand_kit_options[selected_kit_name]
 
-        # Load brand brain
-        tokens, policies = brand_brain.get_brand_brain(selected_kit.id)
+        # Load brand brain (OLD format)
+        tokens_old, policies = brand_brain.get_brand_brain(selected_kit.id)
 
-        if not tokens:
+        if not tokens_old:
             st.sidebar.warning("⚠️ Brand Brain not configured. Using defaults.")
-            tokens = BrandTokens.get_default_tokens()
+            tokens_old = BrandTokens.get_default_tokens()
             policies = BrandPolicies.get_default_policies()
 
-        # Create chat agent
-        agent = ChatAgentPlanner(tokens, policies)
+        # Convert to BrandTokensV2 for Modern Renderer
+        from app.core.schemas_v2 import BrandTokensV2, ColorPalette, ColorToken
+        try:
+            # Extract colors from old format and convert to V2
+            colors_v2 = ColorPalette(
+                primary=ColorToken(hex=tokens_old.color.get('primary', '#4F46E5')),
+                secondary=ColorToken(hex=tokens_old.color.get('secondary', '#7C3AED')),
+                accent=ColorToken(hex=tokens_old.color.get('accent', '#F59E0B')),
+                neutral={},
+                semantic=None
+            )
+            tokens_v2 = BrandTokensV2(
+                brand_id=str(selected_kit.id),
+                colors=colors_v2
+            )
+            st.sidebar.success(f"✅ Loaded brand: {selected_kit.name}")
+            st.sidebar.caption(f"Colors: {tokens_old.color.get('primary')} / {tokens_old.color.get('accent')}")
+        except Exception as e:
+            logger.error(f"Error converting tokens: {e}")
+            tokens_v2 = BrandTokensV2.get_default_tokens()
 
-        return agent, tokens, policies, selected_kit
+        # Create chat agent (uses OLD tokens format)
+        agent = ChatAgentPlanner(tokens_old, policies)
+
+        return agent, tokens_v2, policies, selected_kit
 
     except Exception as e:
         logger.error(f"Error initializing chat agent: {e}")
@@ -106,8 +127,20 @@ def render_chat_interface():
 
     # Brand stats
     with st.sidebar.expander("📊 Brand Stats"):
-        st.write(f"**Colors:** {len([c for c in [tokens.color.get('primary'), tokens.color.get('secondary')] if c])}")
-        st.write(f"**Approved CTAs:** {len(tokens.cta_whitelist)}")
+        # Handle both BrandTokensV2 and old BrandTokens
+        if hasattr(tokens, 'colors'):
+            # BrandTokensV2 format
+            color_count = 3 if tokens.colors else 0
+            st.write(f"**Colors:** {color_count} (Primary, Secondary, Accent)")
+        else:
+            # Old BrandTokens format
+            st.write(f"**Colors:** {len([c for c in [tokens.color.get('primary'), tokens.color.get('secondary')] if c])}")
+
+        # CTA whitelist
+        if hasattr(tokens, 'policies') and tokens.policies:
+            st.write(f"**Approved CTAs:** {len(tokens.policies.cta_whitelist) if tokens.policies.cta_whitelist else 0}")
+        elif hasattr(tokens, 'cta_whitelist'):
+            st.write(f"**Approved CTAs:** {len(tokens.cta_whitelist)}")
         if policies and policies.voice:
             # Handle both list and string types
             voice_traits = policies.voice if isinstance(policies.voice, list) else [policies.voice]
@@ -196,40 +229,116 @@ def render_chat_interface():
                         # NEW: Use HTML/CSS design engine (no DALL-E needed!)
                         st.write("🎨 Using brand colors from your brand book...")
 
-                        # Initialize design engine with brand tokens
+                        # Initialize design engine with brand tokens from session state
+                        tokens = st.session_state.current_tokens
+
+                        # DEBUG: Log what colors we're actually using
+                        if hasattr(tokens, 'colors'):
+                            st.write(f"🔍 DEBUG - Colors being used:")
+                            st.write(f"  Primary: {tokens.colors.primary.hex}")
+                            st.write(f"  Secondary: {tokens.colors.secondary.hex}")
+                            st.write(f"  Accent: {tokens.colors.accent.hex}")
+                        else:
+                            st.write(f"🔍 DEBUG - OLD token format: {tokens.color if hasattr(tokens, 'color') else 'No color data'}")
+
                         engine = DesignEngine(tokens, use_html=True)
 
                         # Show renderer info
                         renderer_info = engine.get_renderer_info()
-                        st.info(f"✨ Using {renderer_info['type']} renderer with {renderer_info['templates']} templates")
+                        if renderer_info['type'] == 'HTML/CSS':
+                            st.info(f"✨ Using {renderer_info['type']} renderer with {renderer_info['templates']} beautiful templates")
+                        else:
+                            st.info(f"✨ Using {renderer_info['type']} renderer (gradient backgrounds + brand colors)")
+                            st.caption("💡 Install Playwright for even better HTML/CSS designs: `pip install playwright && playwright install chromium`")
 
                         # Get logo from brand assets
                         logo_url = None
                         try:
-                            from app.core.brandkit import brand_asset_manager
-                            assets = brand_asset_manager.get_assets_by_brand_kit(selected_kit.id)
+                            from app.core.brandkit import brand_kit_manager
+                            assets = brand_kit_manager.get_brand_assets(selected_kit.id)
+                            st.write(f"🔍 DEBUG - Found {len(assets)} brand assets")
+
                             # Find logo asset
                             for asset in assets:
+                                st.write(f"  - Asset: {asset.type} - {asset.url[:50] if asset.url else 'No URL'}...")
                                 if asset.type == 'logo':
                                     logo_url = asset.url
+                                    st.success(f"✅ Found logo: {logo_url[:80]}...")
                                     logger.info(f"Found logo: {logo_url}")
                                     break
+
+                            if not logo_url:
+                                st.warning("⚠️ No logo found in brand assets. Upload one in 'Onboard Brand Kit' page.")
                         except Exception as e:
+                            st.error(f"❌ Error loading logo: {e}")
                             logger.warning(f"Could not load logo: {e}")
 
-                        # Generate design with HTML/CSS engine
-                        st.write("🎨 Generating beautiful HTML/CSS design...")
-                        result = engine.generate_design(
-                            plan=plan,
-                            background_url=None,  # No background image needed!
-                            logo_url=logo_url,
-                            product_image_url=None,
-                            validate_quality=True
-                        )
+                        # Generate 3 design variations
+                        st.write("🎨 Generating 3 beautiful design variations...")
 
-                        design_image = result['image']
-                        quality_score = result['quality_score']
-                        suggestions = result['suggestions']
+                        # Create 3 variations with different palette modes
+                        palette_variations = ['primary', 'secondary', 'vibrant']
+                        design_variations = []
+
+                        for i, palette_mode in enumerate(palette_variations, 1):
+                            st.write(f"  🎨 Variation {i}: {palette_mode.title()} colors...")
+
+                            # Update plan with different palette mode
+                            plan_variation = DesignPlan(
+                                headline=plan.headline,
+                                subhead=plan.subhead,
+                                cta_text=plan.cta_text,
+                                channel=plan.channel,
+                                aspect_ratio=plan.aspect_ratio,
+                                palette_mode=palette_mode,
+                                background_style=plan.background_style,
+                                visual_concept=plan.visual_concept,
+                                logo_position=plan.logo_position,
+                                reasoning=plan.reasoning
+                            )
+
+                            result = engine.generate_design(
+                                plan=plan_variation,
+                                background_url=None,
+                                logo_url=logo_url,
+                                product_image_url=None,
+                                validate_quality=True
+                            )
+
+                            design_variations.append({
+                                'image': result['image'],
+                                'quality_score': result['quality_score'],
+                                'suggestions': result['suggestions'],
+                                'palette_mode': palette_mode
+                            })
+
+                        st.success(f"✅ Generated {len(design_variations)} design variations!")
+
+                        # Display all 3 design variations
+                        st.markdown("### 🎨 Choose Your Favorite Design")
+
+                        cols = st.columns(3)
+                        selected_variation = None
+
+                        for idx, (col, variation) in enumerate(zip(cols, design_variations)):
+                            with col:
+                                st.image(variation['image'], use_container_width=True)
+                                st.caption(f"**{variation['palette_mode'].title()} Colors**")
+                                st.caption(f"Score: {variation['quality_score']}/100")
+
+                                if st.button(f"✅ Use This", key=f"select_design_{idx}"):
+                                    selected_variation = idx
+
+                        # Use selected design or default to first
+                        if selected_variation is None:
+                            selected_variation = 0
+
+                        design_image = design_variations[selected_variation]['image']
+                        quality_score = design_variations[selected_variation]['quality_score']
+                        suggestions = design_variations[selected_variation]['suggestions']
+
+                        st.markdown("---")
+                        st.write(f"**Selected:** {design_variations[selected_variation]['palette_mode'].title()} variation")
 
                         # Show quality score
                         if quality_score:
@@ -260,11 +369,12 @@ def render_chat_interface():
 
                         # Upload to storage
                         filename = f"chat_design_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                        file_path = f"{st.session_state.org_id}/chat_designs/{filename}"
                         design_url = storage.upload_file(
-                            file_bytes=img_byte_arr.getvalue(),
-                            org_id=st.session_state.org_id,
-                            folder="chat_designs",
-                            filename=filename
+                            bucket_type="assets",
+                            file_path=file_path,
+                            file_data=img_byte_arr,
+                            content_type="image/png"
                         )
 
                         # Save image and URL to session state
@@ -297,7 +407,11 @@ def render_chat_interface():
                         else:
                             st.warning("💡 Can improve")
 
-                st.image(st.session_state.current_design, width="stretch")
+                # Display the actual image, not the URL
+                if hasattr(st.session_state, 'current_design_image') and st.session_state.current_design_image:
+                    st.image(st.session_state.current_design_image, use_container_width=True)
+                else:
+                    st.image(st.session_state.current_design, use_container_width=True)
 
                 # Download button
                 if hasattr(st.session_state, 'current_design_image'):

@@ -85,7 +85,18 @@ class ChatAgentPlanner:
         """
         # DEBUG: Log what brand data the agent receives
         logger.info(f"🔍 DEBUG - ChatAgent Init")
-        logger.info(f"🎨 Received Colors: primary={tokens.color.get('primary')}, secondary={tokens.color.get('secondary')}, accent={tokens.color.get('accent')}")
+        # Compatible color access for both BrandTokens and BrandTokensV2
+        if hasattr(tokens, 'colors'):
+            # BrandTokensV2 format
+            primary = tokens.colors.primary.hex
+            secondary = tokens.colors.secondary.hex
+            accent = tokens.colors.accent.hex
+        else:
+            # Old BrandTokens format
+            primary = tokens.color.get('primary')
+            secondary = tokens.color.get('secondary')
+            accent = tokens.color.get('accent')
+        logger.info(f"🎨 Received Colors: primary={primary}, secondary={secondary}, accent={accent}")
         logger.info(f"📝 Received CTAs: {tokens.cta_whitelist}")
         logger.info(f"🗣️ Received Voice: {policies.voice}")
         logger.info(f"🚫 Received Forbid: {policies.forbid}")
@@ -115,7 +126,18 @@ class ChatAgentPlanner:
 
         available_ctas = ", ".join(self.tokens.cta_whitelist) if self.tokens.cta_whitelist else "Learn More, Get Started"
 
-        colors_desc = f"Primary: {self.tokens.color.get('primary')}, Secondary: {self.tokens.color.get('secondary')}, Accent: {self.tokens.color.get('accent')}"
+        # Compatible color access for both BrandTokens and BrandTokensV2
+        if hasattr(self.tokens, 'colors'):
+            # BrandTokensV2 format
+            primary = self.tokens.colors.primary.hex
+            secondary = self.tokens.colors.secondary.hex
+            accent = self.tokens.colors.accent.hex
+        else:
+            # Old BrandTokens format
+            primary = self.tokens.color.get('primary')
+            secondary = self.tokens.color.get('secondary')
+            accent = self.tokens.color.get('accent')
+        colors_desc = f"Primary: {primary}, Secondary: {secondary}, Accent: {accent}"
 
         system_prompt = f"""You are an expert brand designer and creative strategist. Your job is to help users create engaging social media designs that perfectly match their brand.
 

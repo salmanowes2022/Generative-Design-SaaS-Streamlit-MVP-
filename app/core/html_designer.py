@@ -21,8 +21,10 @@ except ImportError:
     print("   Install with: pip install playwright && playwright install chromium")
 
 from app.core.brand_brain import BrandTokens
+from app.core.schemas_v2 import BrandTokensV2
 from app.core.chat_agent_planner import DesignPlan
 from app.infra.logging import get_logger
+from typing import Union
 
 logger = get_logger(__name__)
 
@@ -51,18 +53,20 @@ class HTMLDesigner:
     - Renders to PNG using Playwright
     """
 
-    def __init__(self, tokens: BrandTokens):
+    def __init__(self, tokens: Union[BrandTokens, BrandTokensV2]):
         """
         Initialize HTML designer
 
         Args:
-            tokens: Brand design tokens
+            tokens: Brand design tokens (supports both old and new formats)
         """
         self.tokens = tokens
         self.templates = self._load_templates()
 
+        # Get colors in compatible way
+        colors = self._get_colors_dict()
         logger.info(f"🎨 HTMLDesigner initialized with {len(self.templates)} templates")
-        logger.info(f"🎨 Brand colors: {tokens.color}")
+        logger.info(f"🎨 Brand colors: Primary={colors.get('primary')}, Accent={colors.get('accent')}")
 
     def _load_templates(self) -> Dict[str, DesignTemplate]:
         """Load built-in design templates"""
@@ -218,8 +222,9 @@ class HTMLDesigner:
         # Get brand colors
         colors = self._get_brand_colors(plan.palette_mode)
 
-        # Get typography
-        font_family = self.tokens.typography.get('heading', {}).get('family', 'Inter, system-ui, sans-serif')
+        # Get typography using compatible helper
+        typography = self._get_typography_dict()
+        font_family = typography.get('heading', {}).get('family', 'Inter, system-ui, sans-serif')
 
         # Build CSS with brand tokens
         css = template.css_template.format(
@@ -311,36 +316,93 @@ class HTMLDesigner:
         }
         return ratios.get(aspect_ratio, (1080, 1080))
 
+    def _get_colors_dict(self) -> Dict[str, str]:
+        """
+        Get colors dict compatible with both BrandTokens and BrandTokensV2
+
+        Returns:
+            Dict with 'primary', 'secondary', 'accent', 'text', 'background' keys
+        """
+        if hasattr(self.tokens, 'colors'):
+            # BrandTokensV2 format - ColorPalette object
+            neutral = self.tokens.colors.neutral if self.tokens.colors.neutral else {}
+            return {
+                'primary': self.tokens.colors.primary.hex,
+                'secondary': self.tokens.colors.secondary.hex,
+                'accent': self.tokens.colors.accent.hex,
+                'text': neutral.get('text', neutral.get('black', '#1F2937')),
+                'background': neutral.get('background', neutral.get('white', '#FFFFFF'))
+            }
+        else:
+            # Old BrandTokens format - .color dict
+            return {
+                'primary': self.tokens.color.get('primary', '#4F46E5'),
+                'secondary': self.tokens.color.get('secondary', '#7C3AED'),
+                'accent': self.tokens.color.get('accent', '#F59E0B'),
+                'text': self.tokens.color.get('text', '#1F2937'),
+                'background': self.tokens.color.get('background', '#FFFFFF')
+            }
+
+    def _get_typography_dict(self) -> Dict[str, Any]:
+        """
+        Get typography dict compatible with both BrandTokens and BrandTokensV2
+
+        Returns:
+            Dict with typography settings
+        """
+        # BrandTokens uses 'type' field for typography
+        if hasattr(self.tokens, 'type') and isinstance(self.tokens.type, dict):
+            # Old BrandTokens format - 'type' contains typography
+            return self.tokens.type
+        elif hasattr(self.tokens, 'typography'):
+            if isinstance(self.tokens.typography, dict):
+                # BrandTokensV2 format as dict
+                return self.tokens.typography
+            else:
+                # BrandTokensV2 format - may be a Typography object
+                # For now, return sensible defaults
+                return {
+                    'heading': {'family': 'Inter, system-ui, sans-serif'},
+                    'body': {'family': 'Inter, system-ui, sans-serif'}
+                }
+        else:
+            # No typography data
+            return {
+                'heading': {'family': 'Inter, system-ui, sans-serif'},
+                'body': {'family': 'Inter, system-ui, sans-serif'}
+            }
+
     def _get_brand_colors(self, palette_mode: str) -> Dict[str, str]:
-        """Get color palette based on mode"""
-        colors = self.tokens.color
+        """Get color palette based on mode - uses compatible helper"""
+        # Get colors using compatible method
+        colors = self._get_colors_dict()
 
         if palette_mode == 'primary':
             return {
-                'primary': colors.get('primary', '#000000'),
-                'secondary': colors.get('secondary', '#666666'),
-                'accent': colors.get('accent', '#FF6B6B'),
+                'primary': colors['primary'],
+                'secondary': colors['secondary'],
+                'accent': colors['accent'],
                 'text': '#FFFFFF'
             }
         elif palette_mode == 'secondary':
             return {
-                'primary': colors.get('secondary', '#666666'),
-                'secondary': colors.get('primary', '#000000'),
-                'accent': colors.get('accent', '#FF6B6B'),
+                'primary': colors['secondary'],
+                'secondary': colors['primary'],
+                'accent': colors['accent'],
                 'text': '#FFFFFF'
             }
         elif palette_mode == 'accent':
             return {
-                'primary': colors.get('accent', '#FF6B6B'),
-                'secondary': colors.get('primary', '#000000'),
-                'accent': colors.get('secondary', '#666666'),
+                'primary': colors['accent'],
+                'secondary': colors['primary'],
+                'accent': colors['secondary'],
                 'text': '#FFFFFF'
             }
-        else:  # mono
+        else:  # mono or vibrant
             return {
-                'primary': colors.get('primary', '#000000'),
+                'primary': colors['primary'],
                 'secondary': '#FFFFFF',
-                'accent': colors.get('accent', '#FF6B6B'),
+                'accent': colors['accent'],
                 'text': '#FFFFFF'
             }
 

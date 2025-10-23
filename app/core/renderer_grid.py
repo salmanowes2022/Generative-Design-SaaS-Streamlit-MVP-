@@ -15,9 +15,11 @@ except ImportError:
     raise ImportError("Pillow not installed. Run: pip install Pillow")
 
 from app.core.brand_brain import BrandTokens
+from app.core.schemas_v2 import BrandTokensV2
 from app.core.chat_agent_planner import DesignPlan
 from app.infra.logging import get_logger
 from app.core.storage import storage
+from typing import Union
 
 logger = get_logger(__name__)
 
@@ -75,26 +77,96 @@ class GridRenderer:
     - Export to PNG
     """
 
-    def __init__(self, tokens: BrandTokens):
+    def __init__(self, tokens: Union[BrandTokens, BrandTokensV2]):
         """
         Initialize renderer
 
         Args:
-            tokens: Brand design tokens
+            tokens: Brand design tokens (supports both old and new versions)
         """
         # DEBUG: Log what brand data the renderer receives
         logger.info(f"🔍 DEBUG - Renderer Init")
-        logger.info(f"🎨 Received Colors: primary={tokens.color.get('primary')}, secondary={tokens.color.get('secondary')}, accent={tokens.color.get('accent')}")
-        logger.info(f"📝 Received CTAs: {tokens.cta_whitelist}")
+
+        # Get colors dict (works for both BrandTokens and BrandTokensV2)
+        colors_dict = self._get_colors_dict(tokens)
+        cta_list = self._get_cta_whitelist(tokens)
+        logger.info(f"🎨 Received Colors: primary={colors_dict.get('primary')}, secondary={colors_dict.get('secondary')}, accent={colors_dict.get('accent')}")
+        logger.info(f"📝 Received CTAs: {cta_list}")
 
         self.tokens = tokens
+        layout_dict = self._get_layout_dict(tokens)
         self.layout = GridLayout(
-            columns=tokens.layout.get('grid', 12),
-            gutter=tokens.layout.get('spacing', 8)
+            columns=layout_dict.get('grid', 12),
+            gutter=layout_dict.get('spacing', 8)
         )
 
         # Font cache
         self._font_cache = {}
+
+    def _get_colors_dict(self, tokens: Union[BrandTokens, BrandTokensV2]) -> Dict[str, str]:
+        """Get colors dict, compatible with both BrandTokens and BrandTokensV2"""
+        # BrandTokensV2 uses 'colors' (ColorPalette object)
+        if hasattr(tokens, 'colors'):
+            # Convert ColorPalette to dict format
+            return {
+                'primary': tokens.colors.primary.hex,
+                'secondary': tokens.colors.secondary.hex,
+                'accent': tokens.colors.accent.hex
+            }
+        # Old BrandTokens uses 'color' (dict)
+        else:
+            return tokens.color
+
+    def _get_cta_whitelist(self, tokens: Union[BrandTokens, BrandTokensV2]) -> List[str]:
+        """Get CTA whitelist, compatible with both BrandTokens and BrandTokensV2"""
+        # BrandTokensV2 has cta_whitelist nested in policies
+        if hasattr(tokens, 'policies') and tokens.policies:
+            return tokens.policies.cta_whitelist
+        # Old BrandTokens has cta_whitelist at top level
+        elif hasattr(tokens, 'cta_whitelist'):
+            return tokens.cta_whitelist
+        # Default empty list
+        else:
+            return []
+
+    def _get_layout_dict(self, tokens: Union[BrandTokens, BrandTokensV2]) -> Dict[str, Any]:
+        """Get layout dict, compatible with both BrandTokens and BrandTokensV2"""
+        # BrandTokensV2 uses LayoutSystem object
+        if hasattr(tokens, 'layout') and hasattr(tokens.layout, 'grid'):
+            return {
+                'grid': tokens.layout.grid,
+                'spacing': tokens.layout.spacing_scale[1] if tokens.layout.spacing_scale else 8,
+                'radius': tokens.layout.border_radius.get('md', 16) if tokens.layout.border_radius else 16
+            }
+        # Old BrandTokens uses dict
+        elif hasattr(tokens, 'layout') and isinstance(tokens.layout, dict):
+            return tokens.layout
+        # Default
+        else:
+            return {'grid': 12, 'spacing': 8, 'radius': 16}
+
+    def _get_typography_dict(self, tokens: Union[BrandTokens, BrandTokensV2]) -> Dict[str, Any]:
+        """Get typography dict, compatible with both BrandTokens and BrandTokensV2"""
+        # BrandTokensV2 uses typography dict with TypographyToken objects
+        if hasattr(tokens, 'typography') and tokens.typography:
+            # Convert TypographyToken objects to simple dict format
+            result = {}
+            for key, typography_token in tokens.typography.items():
+                result[key] = {
+                    'family': typography_token.family,
+                    'weight': str(typography_token.weights[0]) if typography_token.weights else 'normal',
+                    'size': typography_token.sizes[0] if typography_token.sizes else 16
+                }
+            return result
+        # Old BrandTokens uses 'type' dict
+        elif hasattr(tokens, 'type'):
+            return tokens.type
+        # Default
+        else:
+            return {
+                'heading': {'family': 'Arial', 'weight': 'bold', 'size': 48},
+                'body': {'family': 'Arial', 'weight': 'normal', 'size': 16}
+            }
 
     def render_design(
         self,
@@ -124,9 +196,13 @@ class GridRenderer:
         canvas = Image.new('RGB', (width, height), color='white')
         draw = ImageDraw.Draw(canvas)
 
-        # 1. Composite background image
+        # 1. Apply background (image or gradient)
         if background_url:
             canvas = self._apply_background(canvas, background_url)
+        else:
+            # Generate gradient background using brand colors
+            logger.info("No background URL provided - generating gradient background")
+            canvas = self._generate_gradient_background(canvas, plan.palette_mode)
 
         # 2. SKIP overlay - we now use white background boxes on text instead
         # This keeps the background image vibrant and visible
@@ -173,6 +249,53 @@ class GridRenderer:
             logger.error(f"Failed to apply background: {e}")
             return canvas
 
+    def _generate_gradient_background(self, canvas: Image.Image, palette_mode: str) -> Image.Image:
+        """
+        Generate a beautiful gradient background using brand colors
+
+        Args:
+            canvas: Base canvas to apply gradient to
+            palette_mode: Color scheme (primary, vibrant, mono, etc.)
+
+        Returns:
+            Canvas with gradient background
+        """
+        colors_dict = self._get_colors_dict(self.tokens)
+
+        # Select colors based on palette mode
+        if palette_mode == 'vibrant':
+            start_color = colors_dict.get('primary', '#4F46E5')
+            end_color = colors_dict.get('accent', '#F59E0B')
+        elif palette_mode == 'mono':
+            start_color = '#1F2937'  # Dark gray
+            end_color = '#4B5563'    # Medium gray
+        else:  # primary or secondary
+            start_color = colors_dict.get('primary', '#4F46E5')
+            end_color = colors_dict.get('secondary', '#7C3AED')
+
+        logger.info(f"Generating gradient: {start_color} → {end_color}")
+
+        # Convert hex to RGB
+        start_rgb = self._hex_to_rgb(start_color)
+        end_rgb = self._hex_to_rgb(end_color)
+
+        # Create gradient (diagonal, top-left to bottom-right)
+        width, height = canvas.size
+        for y in range(height):
+            for x in range(width):
+                # Calculate position ratio (0.0 to 1.0) along diagonal
+                ratio = (x / width + y / height) / 2
+
+                # Interpolate RGB values
+                r = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio)
+                g = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio)
+                b = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio)
+
+                canvas.putpixel((x, y), (r, g, b))
+
+        logger.info("Gradient background generated")
+        return canvas
+
     def _resize_cover(self, image: Image.Image, target_size: Tuple[int, int]) -> Image.Image:
         """Resize image to cover target size (like CSS background-size: cover)"""
         img_ratio = image.width / image.height
@@ -203,15 +326,16 @@ class GridRenderer:
         draw = ImageDraw.Draw(overlay)
 
         # Get color from palette mode
+        colors_dict = self._get_colors_dict(self.tokens)
         color_map = {
-            'primary': self.tokens.color.get('primary', '#4F46E5'),
-            'secondary': self.tokens.color.get('secondary', '#7C3AED'),
-            'accent': self.tokens.color.get('accent', '#F59E0B'),
+            'primary': colors_dict.get('primary', '#4F46E5'),
+            'secondary': colors_dict.get('secondary', '#7C3AED'),
+            'accent': colors_dict.get('accent', '#F59E0B'),
             'mono': '#000000'
         }
 
         color = color_map.get(palette_mode, '#000000')
-        logger.info(f"🔍 DEBUG - Overlay Color: {color} (palette_mode={palette_mode}, brand primary={self.tokens.color.get('primary')})")
+        logger.info(f"🔍 DEBUG - Overlay Color: {color} (palette_mode={palette_mode}, brand primary={colors_dict.get('primary')})")
         color_rgb = self._hex_to_rgb(color)
 
         # Draw gradient overlay (darker at bottom for text)
@@ -303,7 +427,7 @@ class GridRenderer:
             grid_w=8,  # Wide button
             grid_h=1,
             style={
-                'color': self.tokens.color.get('accent', '#F59E0B'),
+                'color': self._get_colors_dict(self.tokens).get('accent', '#F59E0B'),
                 'font_size': 90  # HUGE
             }
         ))
@@ -352,8 +476,9 @@ class GridRenderer:
         x1, y1, x2, y2 = element.get_bbox(self.layout)
 
         # Get font
-        font_family = self.tokens.type.get('heading', {}).get('family', 'Arial') if bold else \
-                      self.tokens.type.get('body', {}).get('family', 'Arial')
+        typography_dict = self._get_typography_dict(self.tokens)
+        font_family = typography_dict.get('heading', {}).get('family', 'Arial') if bold else \
+                      typography_dict.get('body', {}).get('family', 'Arial')
 
         font = self._get_font(font_family, size, bold)
 
@@ -412,11 +537,12 @@ class GridRenderer:
 
         # Background color
         bg_color = element.style.get('color', '#F59E0B') if element.style else '#F59E0B'
-        logger.info(f"🔍 DEBUG - CTA Button Color: {bg_color} (Brand accent: {self.tokens.color.get('accent')})")
+        logger.info(f"🔍 DEBUG - CTA Button Color: {bg_color} (Brand accent: {self._get_colors_dict(self.tokens).get('accent')})")
         bg_rgb = self._hex_to_rgb(bg_color)
 
         # Draw rounded rectangle
-        radius = self.tokens.layout.get('radius', 16)
+        layout_dict = self._get_layout_dict(self.tokens)
+        radius = layout_dict.get('radius', 16)
         draw.rounded_rectangle(
             [(x1, y1), (x2, y2)],
             radius=radius,

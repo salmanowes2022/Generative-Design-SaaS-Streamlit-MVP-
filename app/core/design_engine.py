@@ -7,12 +7,14 @@ from PIL import Image
 import os
 
 from app.core.html_designer import HTMLDesigner, PLAYWRIGHT_AVAILABLE
-from app.core.renderer_grid import GridRenderer
+from app.core.renderer_modern import ModernRenderer
 from app.core.quality_scorer import QualityScorer
 from app.core.contrast_manager import ContrastManager
 from app.core.brand_brain import BrandTokens
+from app.core.schemas_v2 import BrandTokensV2
 from app.core.chat_agent_planner import DesignPlan
 from app.infra.logging import get_logger
+from typing import Union
 
 logger = get_logger(__name__)
 
@@ -22,19 +24,19 @@ class DesignEngine:
     Unified design generation engine
 
     Features:
-    - Automatic renderer selection (HTML vs Pillow)
+    - Automatic renderer selection (HTML vs Modern Renderer)
     - Quality scoring integration
     - Contrast validation
     - Brand consistency checks
-    - Fallback handling
+    - Beautiful, human-quality designs
     """
 
-    def __init__(self, tokens: BrandTokens, use_html: bool = True):
+    def __init__(self, tokens: Union[BrandTokens, BrandTokensV2], use_html: bool = True):
         """
         Initialize design engine
 
         Args:
-            tokens: Brand design tokens
+            tokens: Brand design tokens (supports both versions)
             use_html: Use HTML/CSS renderer (requires Playwright)
         """
         self.tokens = tokens
@@ -45,8 +47,14 @@ class DesignEngine:
             logger.info("🎨 Using HTML/CSS renderer (beautiful designs)")
             self.renderer = HTMLDesigner(tokens)
         else:
-            logger.info("🎨 Using Pillow renderer (fallback)")
-            self.renderer = GridRenderer(tokens)
+            logger.info("🎨 Using Modern renderer (gradient backgrounds + professional layouts)")
+            # Convert old BrandTokens to BrandTokensV2 if needed
+            if isinstance(tokens, BrandTokensV2):
+                self.renderer = ModernRenderer(tokens)
+            else:
+                # For old BrandTokens, use default tokens
+                logger.warning("Using default tokens for modern renderer")
+                self.renderer = ModernRenderer(BrandTokensV2.get_default_tokens())
 
         # Initialize quality tools
         self.quality_scorer = QualityScorer()
@@ -97,10 +105,11 @@ class DesignEngine:
             logger.info("✅ Design rendered successfully")
         except Exception as e:
             logger.error(f"❌ Rendering failed: {e}")
-            # Fallback to grid renderer if HTML fails
+            # Fallback to modern renderer if HTML fails
             if self.use_html:
-                logger.warning("⚠️  Falling back to Pillow renderer")
-                fallback_renderer = GridRenderer(self.tokens)
+                logger.warning("⚠️  Falling back to Modern renderer")
+                fallback_tokens = self.tokens if isinstance(self.tokens, BrandTokensV2) else BrandTokensV2.get_default_tokens()
+                fallback_renderer = ModernRenderer(fallback_tokens)
                 image = fallback_renderer.render_design(
                     plan=plan,
                     background_url=background_url,
@@ -126,11 +135,11 @@ class DesignEngine:
             quality_result = self.quality_scorer.score_design(plan, image)
             result['quality_score'] = quality_result.overall_score
             result['quality_details'] = {
-                'readability': quality_result.readability_score.score,
-                'brand_consistency': quality_result.brand_consistency_score.score,
-                'composition': quality_result.composition_score.score,
-                'impact': quality_result.impact_score.score,
-                'accessibility': quality_result.accessibility_score.score
+                'readability': quality_result.readability.score,
+                'brand_consistency': quality_result.brand_consistency.score,
+                'composition': quality_result.composition.score,
+                'impact': quality_result.impact.score,
+                'accessibility': quality_result.accessibility.score
             }
             result['suggestions'] = quality_result.suggestions
 
@@ -177,7 +186,7 @@ class DesignEngine:
             adjusted_bg = self.contrast_manager.ensure_readable_text(
                 text_color=text_color,
                 background_color=bg_color,
-                target_ratio=4.5
+                min_ratio=4.5
             )
 
             logger.info(f"✅ Adjusted background: {bg_color} → {adjusted_bg}")
@@ -203,56 +212,77 @@ class DesignEngine:
         text_color = '#FFFFFF'
         bg_color = colors['primary']
 
-        ratio = self.contrast_manager.calculate_contrast_ratio(text_color, bg_color)
-        wcag_result = self.contrast_manager.check_wcag_compliance(text_color, bg_color)
+        contrast_result = self.contrast_manager.check_contrast(text_color, bg_color, is_large_text=False)
 
         result = {
-            'ratio': ratio,
-            'passes_wcag_aa': wcag_result['aa_normal'],
-            'passes_wcag_aaa': wcag_result['aaa_normal'],
+            'ratio': contrast_result.ratio,
+            'passes_wcag_aa': contrast_result.passes_aa,
+            'passes_wcag_aaa': contrast_result.passes_aaa,
             'text_color': text_color,
             'background_color': bg_color,
             'suggested_color': None
         }
 
         # If contrast is too low, suggest adjustment
-        if not wcag_result['aa_normal']:
+        if not contrast_result.passes_aa:
             suggested = self.contrast_manager.ensure_readable_text(
                 text_color=text_color,
                 background_color=bg_color,
-                target_ratio=4.5
+                min_ratio=4.5
             )
             result['suggested_color'] = suggested
 
         return result
 
+    def _get_colors_dict(self) -> Dict[str, str]:
+        """Get colors dict compatible with both BrandTokens and BrandTokensV2"""
+        if hasattr(self.tokens, 'colors'):
+            # BrandTokensV2 format
+            neutral = self.tokens.colors.neutral if self.tokens.colors.neutral else {}
+            return {
+                'primary': self.tokens.colors.primary.hex,
+                'secondary': self.tokens.colors.secondary.hex,
+                'accent': self.tokens.colors.accent.hex,
+                'text': neutral.get('text', neutral.get('black', '#1F2937')),
+                'background': neutral.get('background', neutral.get('white', '#FFFFFF'))
+            }
+        else:
+            # Old BrandTokens format
+            return {
+                'primary': self.tokens.color.get('primary', '#4F46E5'),
+                'secondary': self.tokens.color.get('secondary', '#7C3AED'),
+                'accent': self.tokens.color.get('accent', '#F59E0B'),
+                'text': self.tokens.color.get('text', '#1F2937'),
+                'background': self.tokens.color.get('background', '#FFFFFF')
+            }
+
     def _get_palette_colors(self, palette_mode: str) -> Dict[str, str]:
-        """Get color palette based on mode"""
-        colors = self.tokens.color
+        """Get color palette based on mode - uses compatible helper"""
+        colors = self._get_colors_dict()
 
         if palette_mode == 'primary':
             return {
-                'primary': colors.get('primary', '#000000'),
-                'secondary': colors.get('secondary', '#666666'),
-                'accent': colors.get('accent', '#FF6B6B')
+                'primary': colors['primary'],
+                'secondary': colors['secondary'],
+                'accent': colors['accent']
             }
         elif palette_mode == 'secondary':
             return {
-                'primary': colors.get('secondary', '#666666'),
-                'secondary': colors.get('primary', '#000000'),
-                'accent': colors.get('accent', '#FF6B6B')
+                'primary': colors['secondary'],
+                'secondary': colors['primary'],
+                'accent': colors['accent']
             }
         elif palette_mode == 'accent':
             return {
-                'primary': colors.get('accent', '#FF6B6B'),
-                'secondary': colors.get('primary', '#000000'),
-                'accent': colors.get('secondary', '#666666')
+                'primary': colors['accent'],
+                'secondary': colors['primary'],
+                'accent': colors['secondary']
             }
         else:  # mono
             return {
-                'primary': colors.get('primary', '#000000'),
+                'primary': colors['primary'],
                 'secondary': '#FFFFFF',
-                'accent': colors.get('accent', '#FF6B6B')
+                'accent': colors['accent']
             }
 
     def preview_templates(self) -> Dict[str, str]:
