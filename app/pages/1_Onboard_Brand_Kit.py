@@ -5,7 +5,6 @@ Upload logos, fonts, and define brand guidelines
 import streamlit as st
 from io import BytesIO
 from app.core.schemas import BrandKitCreate, BrandColors, BrandStyle
-from app.core.router import router
 from app.core.brandkit import brand_kit_manager
 from app.infra.logging import get_logger
 
@@ -131,7 +130,6 @@ def main():
             with st.spinner("Analyzing your brand materials with AI... This may take 2-5 minutes."):
                 try:
                     from app.core.brandbook_analyzer import brandbook_analyzer
-                    from app.core.brand_analyzer import brand_analyzer
                     from app.core.brand_intelligence import brand_intelligence
                     from app.core.logo_extractor import logo_extractor
                     from app.core.storage import storage
@@ -200,10 +198,10 @@ def main():
 
                     # Analyze example images if provided
                     if example_images and len(example_images) > 0:
-                        st.info("🎨 Analyzing brand example images...")
+                        st.info("🎨 Uploading brand example images...")
 
                         try:
-                            # Upload examples to storage and get URLs
+                            # Upload examples to storage (simplified - no AI analysis)
                             example_urls = []
                             for idx, img_file in enumerate(example_images[:5]):
                                 img_file.seek(0)
@@ -217,17 +215,16 @@ def main():
                                 )
                                 example_urls.append(public_url)
 
-                            # Analyze examples
-                            images_result = brand_analyzer.analyze_brand_examples(
-                                org_id=org_id,
-                                example_urls=example_urls
-                            )
-                            analysis_results['images'] = images_result
-                            examples_analysis = images_result
-                            st.success("✅ Brand examples analyzed!")
+                            # Store URLs but skip AI analysis (we removed brand_analyzer)
+                            examples_analysis = {
+                                "example_urls": example_urls,
+                                "note": "Example images uploaded but not analyzed"
+                            }
+                            analysis_results['images'] = examples_analysis
+                            st.success(f"✅ Uploaded {len(example_urls)} brand examples!")
                         except Exception as img_error:
-                            logger.error(f"Image analysis failed: {str(img_error)}")
-                            st.warning(f"⚠️ Image analysis failed: {str(img_error)}")
+                            logger.error(f"Image upload failed: {str(img_error)}")
+                            st.warning(f"⚠️ Image upload failed: {str(img_error)}")
                             import traceback
                             with st.expander("Show image error details"):
                                 st.code(traceback.format_exc())
@@ -540,22 +537,62 @@ def main():
                         )
                     )
 
-                    # Prepare file uploads
-                    logo_data = None
-                    if logo_file:
-                        logo_data = BytesIO(logo_file.read())
-
-                    font_data = None
-                    if font_file:
-                        font_data = BytesIO(font_file.read())
-
-                    # Create brand kit with assets
-                    result = router.create_brand_kit_with_assets(
+                    # Create brand kit
+                    brand_kit = brand_kit_manager.create_brand_kit(
                         org_id=org_id,
-                        brand_kit_data=brand_kit_data,
-                        logo_file=logo_data,
-                        font_file=font_data
+                        brand_kit_data=brand_kit_data
                     )
+
+                    # Upload assets if provided
+                    from app.core.storage import storage
+                    from app.core.schemas import BrandAssetCreate, AssetType
+                    import time
+
+                    assets = []
+
+                    # Upload logo if provided
+                    if logo_file:
+                        logo_file.seek(0)
+                        file_path = f"{org_id}/brand_assets/logo_{int(time.time())}.png"
+                        logo_url = storage.upload_file(
+                            bucket_type="assets",
+                            file_path=file_path,
+                            file_data=logo_file,
+                            content_type="image/png"
+                        )
+
+                        # Add logo asset
+                        logo_asset = brand_kit_manager.add_brand_asset(
+                            asset_data=BrandAssetCreate(
+                                brand_kit_id=brand_kit.id,
+                                type=AssetType.LOGO,
+                                url=logo_url,
+                                meta={"filename": logo_file.name}
+                            )
+                        )
+                        assets.append(logo_asset)
+
+                    # Upload font if provided
+                    if font_file:
+                        font_file.seek(0)
+                        file_path = f"{org_id}/brand_assets/font_{int(time.time())}.ttf"
+                        font_url = storage.upload_file(
+                            bucket_type="assets",
+                            file_path=file_path,
+                            file_data=font_file,
+                            content_type="font/ttf"
+                        )
+
+                        # Add font asset
+                        font_asset = brand_kit_manager.add_brand_asset(
+                            asset_data=BrandAssetCreate(
+                                brand_kit_id=brand_kit.id,
+                                type=AssetType.FONT,
+                                url=font_url,
+                                meta={"filename": font_file.name}
+                            )
+                        )
+                        assets.append(font_asset)
 
                     st.success("✅ Brand kit created successfully!")
 
@@ -563,12 +600,12 @@ def main():
                     st.balloons()
 
                     st.markdown("### ✨ Brand Kit Summary")
-                    st.write(f"**Name**: {result['brand_kit'].name}")
-                    st.write(f"**Colors**: {result['brand_kit'].colors.primary}, {result['brand_kit'].colors.secondary}")
-                    st.write(f"**Style**: {', '.join(result['brand_kit'].style.descriptors)}")
-                    st.write(f"**Assets**: {len(result['assets'])} uploaded")
+                    st.write(f"**Name**: {brand_kit.name}")
+                    st.write(f"**Colors**: {brand_kit.colors.primary}, {brand_kit.colors.secondary}")
+                    st.write(f"**Style**: {', '.join(brand_kit.style.descriptors)}")
+                    st.write(f"**Assets**: {len(assets)} uploaded")
 
-                    st.success("✅ Next: Go to Generate page to create assets with this brand kit!")
+                    st.success("✅ Next: Go to Chat Create page to generate designs with this brand kit!")
 
             except Exception as e:
                 logger.error(f"Error creating brand kit: {str(e)}")

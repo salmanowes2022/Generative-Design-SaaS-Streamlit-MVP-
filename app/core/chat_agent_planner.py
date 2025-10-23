@@ -83,6 +83,13 @@ class ChatAgentPlanner:
             policies: Brand policies (voice, forbidden terms)
             api_key: OpenAI API key
         """
+        # DEBUG: Log what brand data the agent receives
+        logger.info(f"🔍 DEBUG - ChatAgent Init")
+        logger.info(f"🎨 Received Colors: primary={tokens.color.get('primary')}, secondary={tokens.color.get('secondary')}, accent={tokens.color.get('accent')}")
+        logger.info(f"📝 Received CTAs: {tokens.cta_whitelist}")
+        logger.info(f"🗣️ Received Voice: {policies.voice}")
+        logger.info(f"🚫 Received Forbid: {policies.forbid}")
+
         openai.api_key = api_key or settings.OPENAI_API_KEY
         self.model = "gpt-4-turbo-preview"
         self.tokens = tokens
@@ -93,6 +100,9 @@ class ChatAgentPlanner:
 
         # System prompt with brand context
         self.system_prompt = self._build_system_prompt()
+        logger.info(f"📋 System Prompt Length: {len(self.system_prompt)} chars")
+        logger.info(f"📋 System Prompt Preview: {self.system_prompt[:500]}...")
+
         self.messages.append(ChatMessage(
             role="system",
             content=self.system_prompt

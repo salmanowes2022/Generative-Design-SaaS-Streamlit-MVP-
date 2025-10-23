@@ -1,0 +1,105 @@
+# ============================================================================
+# Requirements V3 - Enhanced Architecture
+# Install with: pip install -r requirements_v3.txt
+# ============================================================================
+
+# Core Framework
+streamlit==1.32.0
+python-dotenv==1.0.1
+
+# Database & Storage
+psycopg[binary]==3.1.18
+supabase==2.7.4
+realtime-py==0.2.0
+
+# AI & Image Processing
+openai==1.14.0
+pillow==10.2.0
+imagehash==4.3.1
+pdf2image==1.16.3
+PyPDF2==3.0.1
+pdfplumber==0.11.0
+python-docx==1.1.0
+pytesseract==0.3.10
+
+# Color Science & Validation
+colormath==3.0.0
+colorzero==2.0  # For color manipulation
+
+# Data Validation
+pydantic==2.6.3
+pydantic-settings==2.2.1
+
+# Payments
+stripe==8.7.0
+
+# Utilities
+requests==2.31.0
+numpy==1.26.4
+
+# Testing
+pytest==7.4.3
+pytest-mock==3.12.0
+
+# ============================================================================
+# NEW V3 DEPENDENCIES
+# ============================================================================
+
+# PDF Parsing (Enhanced)
+pdfplumber==0.11.0  # Already included above
+pypdf==3.17.4  # Alternative PDF library
+camelot-py[cv]==0.11.0  # Advanced PDF table extraction (optional)
+
+# SVG Support (for vector export)
+svgwrite==1.4.3
+svglib==1.5.1
+reportlab==4.0.7  # For SVG to PDF conversion
+
+# Color Science (Enhanced)
+colour-science==0.4.4  # Advanced color analysis
+webcolors==1.13  # Web color utilities
+
+# Image Processing (Enhanced)
+opencv-python-headless==4.9.0.80  # Computer vision (for logo extraction)
+scikit-image==0.22.0  # Image processing algorithms
+
+# HTML/CSS Rendering (NEW - for beautiful designs)
+playwright==1.41.0  # Browser automation for HTML rendering
+html2image==2.0.4.3  # Alternative HTML to image converter
+
+# Performance & Caching (Optional but Recommended)
+redis==5.0.1  # Caching
+hiredis==2.3.2  # Faster Redis protocol
+celery==5.3.4  # Async task queue
+flower==2.0.1  # Celery monitoring
+
+# Monitoring & Logging (Optional)
+sentry-sdk==1.40.0  # Error tracking
+python-json-logger==2.0.7  # Structured logging
+
+# API Clients (for export features)
+canva-python==0.1.0  # Canva API (if available, or use requests)
+# Note: Figma doesn't have official Python SDK, use requests
+
+# Development Tools
+black==24.1.1  # Code formatting
+flake8==7.0.0  # Linting
+mypy==1.8.0  # Type checking
+pre-commit==3.6.0  # Git hooks
+
+# Documentation
+mkdocs==1.5.3  # Documentation generator
+mkdocs-material==9.5.6  # Material theme for docs
+
+# ============================================================================
+# SYSTEM DEPENDENCIES (install via package manager)
+# ============================================================================
+
+# macOS (Homebrew):
+# brew install poppler tesseract redis
+
+# Ubuntu/Debian:
+# apt-get install poppler-utils tesseract-ocr redis-server libopencv-dev
+
+# Windows (Chocolatey):
+# choco install poppler tesseract redis

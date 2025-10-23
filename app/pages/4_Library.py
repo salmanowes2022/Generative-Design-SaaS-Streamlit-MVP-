@@ -143,14 +143,14 @@ def main():
                     with col:
                         # Show composed if available, otherwise base
                         image_url = asset.get("composed_url") or asset["base_url"]
-                        st.image(image_url, use_container_width=True)
+                        st.image(image_url, width="stretch")
 
                         # Asset info
                         st.caption(f"Created: {asset['created_at'].strftime('%Y-%m-%d %H:%M')}")
-                        
+
                         if asset.get("aspect_ratio"):
                             st.caption(f"Format: {asset['aspect_ratio']}")
-                        
+
                         # Validation badge
                         if asset.get("composed_url"):
                             try:
@@ -158,7 +158,7 @@ def main():
                                 # Handle both string and dict
                                 if isinstance(val_data, str):
                                     val_data = json.loads(val_data)
-                                
+
                                 if val_data.get("color_accuracy"):
                                     score = val_data["color_accuracy"]
                                     if score >= 90:
@@ -171,18 +171,18 @@ def main():
                                 st.info("ℹ️ Composed")
                         else:
                             st.info("🎨 Base Image")
-                        
+
                         # Action buttons
                         col_btn1, col_btn2 = st.columns(2)
-                        
+
                         with col_btn1:
-                            if st.button("👁️ View", key=f"view_{asset['id']}", use_container_width=True):
+                            if st.button("👁️ View", key=f"view_{asset['id']}", width="stretch"):
                                 st.session_state.viewing_asset = asset
                                 st.rerun()
-                        
+
                         with col_btn2:
                             if not asset.get("composed_url"):
-                                if st.button("✨ Compose", key=f"compose_{asset['id']}", use_container_width=True):
+                                if st.button("✨ Compose", key=f"compose_{asset['id']}", width="stretch"):
                                     st.session_state.selected_asset_id = str(asset['id'])
                                     st.switch_page("pages/3_Compose_Validate.py")
                             else:
@@ -193,7 +193,7 @@ def main():
                                     file_name=f"asset_{asset['id']}.jpg",
                                     mime="image/jpeg",
                                     key=f"download_{asset['id']}",
-                                    use_container_width=True
+                                    width="stretch"
                                 )
     
     except Exception as e:
@@ -212,7 +212,7 @@ def main():
         
         with col_detail1:
             image_url = asset.get("composed_url") or asset["base_url"]
-            st.image(image_url, use_container_width=True)
+            st.image(image_url, width="stretch")
         
         with col_detail2:
             st.markdown("### Information")
@@ -252,13 +252,13 @@ def main():
             
             # Actions
             st.markdown("---")
-            
-            if st.button("🔙 Back to Library", use_container_width=True):
+
+            if st.button("🔙 Back to Library", width="stretch"):
                 del st.session_state.viewing_asset
                 st.rerun()
-            
+
             if not asset.get("composed_url"):
-                if st.button("✨ Compose This Asset", use_container_width=True):
+                if st.button("✨ Compose This Asset", width="stretch"):
                     st.session_state.selected_asset_id = str(asset['id'])
                     del st.session_state.viewing_asset
                     st.switch_page("pages/3_Compose_Validate.py")

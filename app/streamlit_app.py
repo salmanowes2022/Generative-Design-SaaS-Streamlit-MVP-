@@ -12,7 +12,7 @@ sys.path.insert(0, str(project_root))
 import streamlit as st
 from app.infra.config import settings
 from app.infra.logging import get_logger
-from app.core.router import router
+from app.core.brandkit import brand_kit_manager
 
 logger = get_logger(__name__)
 
@@ -66,45 +66,38 @@ def main():
         col_a, col_b, col_c = st.columns(3)
 
         with col_a:
-            if st.button("📖 1. Upload Brand Book", use_container_width=True, type="primary"):
+            if st.button("📖 1. Upload Brand Book", width="stretch", type="primary"):
                 st.switch_page("pages/1_Onboard_Brand_Kit.py")
 
         with col_b:
-            if st.button("💬 2. Create Designs", use_container_width=True, type="primary"):
+            if st.button("💬 2. Create Designs", width="stretch", type="primary"):
                 st.switch_page("pages/3_Chat_Create.py")
 
         with col_c:
-            if st.button("📚 3. View Library", use_container_width=True):
+            if st.button("📚 3. View Library", width="stretch"):
                 st.switch_page("pages/4_Library.py")
     
     with col2:
-        # Organization summary
+        # Organization summary - simplified
         try:
-            summary = router.get_organization_summary(st.session_state.org_id)
-            
+            from uuid import UUID
+            org_id = UUID(st.session_state.org_id)
+
+            # Get brand kits count
+            brand_kits = brand_kit_manager.get_brand_kits_by_org(org_id)
+
             st.metric(
                 label="Brand Kits",
-                value=summary["brand_kits_count"]
+                value=len(brand_kits)
             )
-            
+
             st.metric(
-                label="Assets Created",
-                value=summary["recent_assets_count"]
+                label="Designs Created",
+                value="—"
             )
-            
-            st.metric(
-                label="Credits Remaining",
-                value=summary["usage"]["credits_remaining"],
-                delta=f"-{summary['usage']['credits_used']} used"
-            )
-            
-            # Quick stats
-            if summary["job_stats"]:
-                st.markdown("---")
-                st.markdown("**Generation Stats**")
-                st.write(f"✅ Completed: {summary['job_stats']['completed_jobs']}")
-                st.write(f"❌ Failed: {summary['job_stats']['failed_jobs']}")
-        
+
+            st.info("💡 Upload a brand book to get started!")
+
         except Exception as e:
             logger.error(f"Error loading summary: {str(e)}")
             st.error("Error loading dashboard data")

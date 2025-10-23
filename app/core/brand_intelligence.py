@@ -57,14 +57,24 @@ class BrandIntelligence:
             }
 
             # Upsert to brand_guidelines table
-            db.execute("""
-                INSERT INTO brand_guidelines (org_id, guidelines, created_at, updated_at)
-                VALUES (%s, %s, NOW(), NOW())
-                ON CONFLICT (org_id)
-                DO UPDATE SET
-                    guidelines = EXCLUDED.guidelines,
-                    updated_at = NOW()
-            """, (str(org_id), json.dumps(brand_intelligence)))
+            # First check if guidelines exist for this org
+            existing = db.fetch_one("""
+                SELECT id FROM brand_guidelines WHERE org_id = %s LIMIT 1
+            """, (str(org_id),))
+
+            if existing:
+                # Update existing record
+                db.execute("""
+                    UPDATE brand_guidelines
+                    SET guidelines = %s, updated_at = NOW()
+                    WHERE org_id = %s
+                """, (json.dumps(brand_intelligence), str(org_id)))
+            else:
+                # Insert new record with required fields
+                db.execute("""
+                    INSERT INTO brand_guidelines (org_id, title, guidelines, created_at, updated_at)
+                    VALUES (%s, %s, %s, NOW(), NOW())
+                """, (str(org_id), 'Brand Intelligence', json.dumps(brand_intelligence)))
 
             logger.info(f"Saved brand intelligence for org {org_id}")
 

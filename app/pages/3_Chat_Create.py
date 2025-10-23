@@ -10,9 +10,7 @@ import io
 from app.core.chat_agent_planner import ChatAgentPlanner, DesignPlan
 from app.core.brand_brain import brand_brain, BrandTokens, BrandPolicies
 from app.core.brandkit import brand_kit_manager
-from app.core.gen_openai import image_generator
-from app.core.schemas import JobCreate, JobParams, AspectRatio
-from app.core.renderer_grid import GridRenderer
+from app.core.design_engine import DesignEngine  # NEW: Use unified design engine
 from app.infra.logging import get_logger
 
 logger = get_logger(__name__)
@@ -192,51 +190,18 @@ def render_chat_interface():
                     st.info(f"**Why:** {plan.reasoning}")
 
             # Generate design button
-            if st.button("🚀 Generate Design", type="primary", use_container_width=True):
-                with st.spinner("Creating your design..."):
+            if st.button("🚀 Generate Design", type="primary", width="stretch"):
+                with st.spinner("Creating your beautiful design..."):
                     try:
-                        # Step 1: Generate background image
-                        st.write("1️⃣ Generating AI background...")
+                        # NEW: Use HTML/CSS design engine (no DALL-E needed!)
+                        st.write("🎨 Using brand colors from your brand book...")
 
-                        # Map aspect ratio string to enum
-                        aspect_map = {
-                            "1x1": AspectRatio.SQUARE,
-                            "4x5": AspectRatio.PORTRAIT,
-                            "9x16": AspectRatio.STORY
-                        }
-                        aspect_enum = aspect_map.get(plan.aspect_ratio, AspectRatio.SQUARE)
+                        # Initialize design engine with brand tokens
+                        engine = DesignEngine(tokens, use_html=True)
 
-                        # Create proper JobCreate object
-                        job_data = JobCreate(
-                            prompt=plan.background_style,
-                            engine="dall-e-3",
-                            params=JobParams(
-                                aspect_ratio=aspect_enum,
-                                num_images=1,
-                                quality="hd",
-                                style="vivid"
-                            )
-                        )
-
-                        # Use the singleton image_generator instance
-                        gen_result = image_generator.generate_with_moderation(
-                            org_id=UUID(st.session_state.org_id),
-                            job_data=job_data
-                        )
-
-                        if not gen_result or not gen_result.get("assets"):
-                            st.error("Failed to generate background image")
-                            return
-
-                        # Extract first asset URL (assets are objects with base_url attribute)
-                        bg_url = gen_result["assets"][0].base_url
-                        if not bg_url:
-                            st.error("No image URL returned")
-                            return
-
-                        # Step 2: Render design
-                        st.write("2️⃣ Composing layout...")
-                        renderer = GridRenderer(tokens)
+                        # Show renderer info
+                        renderer_info = engine.get_renderer_info()
+                        st.info(f"✨ Using {renderer_info['type']} renderer with {renderer_info['templates']} templates")
 
                         # Get logo from brand assets
                         logo_url = None
@@ -252,24 +217,62 @@ def render_chat_interface():
                         except Exception as e:
                             logger.warning(f"Could not load logo: {e}")
 
-                        design_image = renderer.render_design(
+                        # Generate design with HTML/CSS engine
+                        st.write("🎨 Generating beautiful HTML/CSS design...")
+                        result = engine.generate_design(
                             plan=plan,
-                            background_url=bg_url,
+                            background_url=None,  # No background image needed!
                             logo_url=logo_url,
-                            product_image_url=None
+                            product_image_url=None,
+                            validate_quality=True
                         )
 
-                        # Step 3: Save design
-                        st.write("3️⃣ Saving design...")
-                        design_url = renderer.save_design(
-                            design_image,
-                            org_id=str(st.session_state.org_id),
-                            filename=f"chat_design_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                        design_image = result['image']
+                        quality_score = result['quality_score']
+                        suggestions = result['suggestions']
+
+                        # Show quality score
+                        if quality_score:
+                            st.metric("Quality Score", f"{quality_score}/100")
+                            if quality_score >= 90:
+                                st.success("🌟 Excellent quality!")
+                            elif quality_score >= 75:
+                                st.info("👍 Good quality!")
+                            else:
+                                st.warning("💡 Could be improved")
+
+                        # Show suggestions
+                        if suggestions:
+                            with st.expander("💡 Improvement Suggestions"):
+                                for suggestion in suggestions:
+                                    st.write(f"• {suggestion}")
+
+                        # Save design to storage
+                        st.write("💾 Saving design...")
+                        from app.core.storage import storage
+                        from PIL import Image
+                        import io
+
+                        # Convert PIL Image to bytes
+                        img_byte_arr = io.BytesIO()
+                        design_image.save(img_byte_arr, format='PNG')
+                        img_byte_arr.seek(0)
+
+                        # Upload to storage
+                        filename = f"chat_design_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                        design_url = storage.upload_file(
+                            file_bytes=img_byte_arr.getvalue(),
+                            org_id=st.session_state.org_id,
+                            folder="chat_designs",
+                            filename=filename
                         )
 
+                        # Save image and URL to session state
+                        st.session_state.current_design_image = design_image
                         st.session_state.current_design = design_url
+                        st.session_state.current_quality = quality_score
 
-                        st.success("🎉 Design created!")
+                        st.success("🎉 Beautiful design created!")
                         st.rerun()
 
                     except Exception as e:
@@ -280,19 +283,40 @@ def render_chat_interface():
             if st.session_state.current_design:
                 st.markdown("---")
                 st.markdown("### ✨ Your Design")
-                st.image(st.session_state.current_design, use_container_width=True)
+
+                # Show quality score if available
+                if hasattr(st.session_state, 'current_quality') and st.session_state.current_quality:
+                    col_q1, col_q2 = st.columns(2)
+                    with col_q1:
+                        st.metric("Quality Score", f"{st.session_state.current_quality}/100")
+                    with col_q2:
+                        if st.session_state.current_quality >= 90:
+                            st.success("🌟 Excellent!")
+                        elif st.session_state.current_quality >= 75:
+                            st.info("👍 Good!")
+                        else:
+                            st.warning("💡 Can improve")
+
+                st.image(st.session_state.current_design, width="stretch")
 
                 # Download button
-                st.download_button(
-                    "📥 Download PNG",
-                    data=st.session_state.current_design,
-                    file_name=f"design_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-                    mime="image/png",
-                    use_container_width=True
-                )
+                if hasattr(st.session_state, 'current_design_image'):
+                    # Convert image to bytes for download
+                    import io
+                    img_byte_arr = io.BytesIO()
+                    st.session_state.current_design_image.save(img_byte_arr, format='PNG')
+                    img_byte_arr.seek(0)
+
+                    st.download_button(
+                        "📥 Download PNG",
+                        data=img_byte_arr.getvalue(),
+                        file_name=f"design_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                        mime="image/png",
+                        width="stretch"
+                    )
 
                 # Iterate button
-                if st.button("🔄 Refine Design", use_container_width=True):
+                if st.button("🔄 Refine Design", width="stretch"):
                     st.info("💬 Tell me what you'd like to change in the chat!")
 
         else:
@@ -309,7 +333,7 @@ def render_chat_interface():
             ]
 
             for prompt in example_prompts:
-                if st.button(prompt, use_container_width=True):
+                if st.button(prompt, width="stretch"):
                     # Simulate user input
                     with st.chat_message("user"):
                         st.markdown(prompt)

@@ -82,6 +82,11 @@ class GridRenderer:
         Args:
             tokens: Brand design tokens
         """
+        # DEBUG: Log what brand data the renderer receives
+        logger.info(f"🔍 DEBUG - Renderer Init")
+        logger.info(f"🎨 Received Colors: primary={tokens.color.get('primary')}, secondary={tokens.color.get('secondary')}, accent={tokens.color.get('accent')}")
+        logger.info(f"📝 Received CTAs: {tokens.cta_whitelist}")
+
         self.tokens = tokens
         self.layout = GridLayout(
             columns=tokens.layout.get('grid', 12),
@@ -123,8 +128,9 @@ class GridRenderer:
         if background_url:
             canvas = self._apply_background(canvas, background_url)
 
-        # 2. Apply overlay for text readability
-        canvas = self._apply_overlay(canvas, plan.palette_mode)
+        # 2. SKIP overlay - we now use white background boxes on text instead
+        # This keeps the background image vibrant and visible
+        # canvas = self._apply_overlay(canvas, plan.palette_mode)
 
         # 3. Render layout elements
         elements = self._plan_to_elements(plan, logo_url, product_image_url)
@@ -205,6 +211,7 @@ class GridRenderer:
         }
 
         color = color_map.get(palette_mode, '#000000')
+        logger.info(f"🔍 DEBUG - Overlay Color: {color} (palette_mode={palette_mode}, brand primary={self.tokens.color.get('primary')})")
         color_rgb = self._hex_to_rgb(color)
 
         # Draw gradient overlay (darker at bottom for text)
@@ -254,37 +261,51 @@ class GridRenderer:
                 grid_h=5
             ))
 
-        # Headline (VERY LARGE - like professional social media posts)
+        # HEADLINE - HUGE, CENTER, IMPOSSIBLE TO MISS
+        # Use absolute positioning for social media impact
         elements.append(LayoutElement(
             type='headline',
             content=plan.headline,
-            grid_x=0,  # Full width for maximum impact
-            grid_y=7,  # Lower third
-            grid_w=12,
-            grid_h=3,
-            style={'color': '#FFFFFF', 'size': 'xl', 'font_size': 110}  # MUCH LARGER
+            grid_x=1,  # Small margins
+            grid_y=5,  # Middle area
+            grid_w=10,  # Almost full width
+            grid_h=2,
+            style={
+                'color': '#000000',
+                'font_size': 180,  # MASSIVE
+                'bg_box': True,
+                'align': 'center'
+            }
         ))
 
-        # Subhead (LARGER and more readable)
+        # SUBHEAD - LARGE, READABLE
         elements.append(LayoutElement(
             type='subhead',
             content=plan.subhead,
-            grid_x=0,
-            grid_y=10,
-            grid_w=12,
-            grid_h=1,
-            style={'color': '#FFFFFF', 'size': 'md', 'font_size': 48}  # MUCH LARGER
+            grid_x=1,
+            grid_y=8,  # Below headline
+            grid_w=10,
+            grid_h=2,
+            style={
+                'color': '#000000',
+                'font_size': 80,  # LARGE
+                'bg_box': True,
+                'align': 'center'
+            }
         ))
 
-        # CTA button (PROMINENT)
+        # CTA BUTTON - MASSIVE, BOTTOM CENTER
         elements.append(LayoutElement(
             type='cta',
             content=plan.cta_text,
             grid_x=2,  # Centered
-            grid_y=11,
-            grid_w=8,  # Wider button
+            grid_y=10,  # Near bottom
+            grid_w=8,  # Wide button
             grid_h=1,
-            style={'color': self.tokens.color.get('accent', '#F59E0B')}
+            style={
+                'color': self.tokens.color.get('accent', '#F59E0B'),
+                'font_size': 90  # HUGE
+            }
         ))
 
         return elements
@@ -324,7 +345,7 @@ class GridRenderer:
         bold: bool = False,
         size: int = 48
     ) -> Image.Image:
-        """Render text element with wrapping"""
+        """Render text element with wrapping and background box for visibility"""
         draw = ImageDraw.Draw(canvas)
 
         # Get bounding box
@@ -337,17 +358,48 @@ class GridRenderer:
         font = self._get_font(font_family, size, bold)
 
         # Get color
-        color = element.style.get('color', '#FFFFFF') if element.style else '#FFFFFF'
+        color = element.style.get('color', '#000000') if element.style else '#000000'
         color_rgb = self._hex_to_rgb(color)
 
         # Word wrap text
         wrapped_text = self._wrap_text(element.content, font, x2 - x1)
 
-        # Draw text with shadow for better visibility
-        # Shadow (black, offset by 2px)
-        draw.text((x1 + 2, y1 + 2), wrapped_text, font=font, fill=(0, 0, 0))
-        # Main text
-        draw.text((x1, y1), wrapped_text, font=font, fill=color_rgb)
+        # Get text bounding box for positioning
+        text_bbox = draw.textbbox((0, 0), wrapped_text, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+
+        # Center align if requested
+        text_x = x1
+        text_y = y1
+        if element.style and element.style.get('align') == 'center':
+            text_x = x1 + ((x2 - x1) - text_width) // 2
+            text_y = y1 + ((y2 - y1) - text_height) // 2
+
+        # CRITICAL: Draw semi-transparent white background box for visibility
+        if element.style and element.style.get('bg_box', False):
+            # Get exact text bounding box at final position
+            final_bbox = draw.textbbox((text_x, text_y), wrapped_text, font=font)
+            # Add generous padding
+            padding = 40
+            bg_box = [
+                final_bbox[0] - padding,
+                final_bbox[1] - padding,
+                final_bbox[2] + padding,
+                final_bbox[3] + padding
+            ]
+            # Draw white background with 90% opacity
+            overlay = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(overlay)
+            overlay_draw.rectangle(bg_box, fill=(255, 255, 255, 230))  # White, 90% opacity
+
+            canvas = canvas.convert('RGBA')
+            canvas = Image.alpha_composite(canvas, overlay)
+            canvas = canvas.convert('RGB')
+            draw = ImageDraw.Draw(canvas)
+
+        # Draw text (BLACK for maximum contrast)
+        draw.text((text_x, text_y), wrapped_text, font=font, fill=color_rgb)
 
         return canvas
 
@@ -360,6 +412,7 @@ class GridRenderer:
 
         # Background color
         bg_color = element.style.get('color', '#F59E0B') if element.style else '#F59E0B'
+        logger.info(f"🔍 DEBUG - CTA Button Color: {bg_color} (Brand accent: {self.tokens.color.get('accent')})")
         bg_rgb = self._hex_to_rgb(bg_color)
 
         # Draw rounded rectangle
@@ -370,8 +423,9 @@ class GridRenderer:
             fill=bg_rgb
         )
 
-        # Draw text centered (MUCH larger for visibility)
-        font = self._get_font('Arial', 56, bold=True)
+        # Draw text centered (use font size from style)
+        font_size = element.style.get('font_size', 70) if element.style else 70
+        font = self._get_font('Arial', font_size, bold=True)
 
         # Get text size for centering
         bbox = draw.textbbox((0, 0), element.content, font=font)

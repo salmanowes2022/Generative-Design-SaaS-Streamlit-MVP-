@@ -322,6 +322,13 @@ class BrandBrain:
             policies: Brand policies
         """
         try:
+            # DEBUG: Log actual data being saved
+            logger.info(f"🔍 DEBUG - Saving Brand Brain for {brand_kit_id}")
+            logger.info(f"🎨 Colors: primary={tokens.color.get('primary')}, secondary={tokens.color.get('secondary')}, accent={tokens.color.get('accent')}")
+            logger.info(f"📝 CTAs: {tokens.cta_whitelist}")
+            logger.info(f"🗣️ Voice: {policies.voice}")
+            logger.info(f"🚫 Forbid: {policies.forbid}")
+
             self.db.update(
                 table='brand_kits',
                 data={
@@ -333,7 +340,7 @@ class BrandBrain:
                 where_params=(str(brand_kit_id),)
             )
 
-            logger.info(f"Saved Brand Brain v2 for brand kit {brand_kit_id}")
+            logger.info(f"✅ Saved Brand Brain v2 for brand kit {brand_kit_id}")
 
         except Exception as e:
             logger.error(f"Error saving brand brain: {str(e)}")
@@ -353,12 +360,15 @@ class BrandBrain:
             Tuple of (tokens, policies) or (None, None)
         """
         try:
+            logger.info(f"🔍 DEBUG - Loading Brand Brain for {brand_kit_id}")
+
             result = self.db.fetch_one(
                 "SELECT tokens, policies FROM brand_kits WHERE id = %s",
                 (str(brand_kit_id),)
             )
 
             if not result:
+                logger.warning(f"⚠️ No brand brain found for {brand_kit_id}")
                 return None, None
 
             # Handle both dict and tuple responses from psycopg
@@ -375,11 +385,15 @@ class BrandBrain:
                 if isinstance(tokens_data, str):
                     tokens_data = json.loads(tokens_data)
                 tokens = BrandTokens.from_dict(tokens_data)
+                logger.info(f"🎨 Loaded Colors: primary={tokens.color.get('primary')}, secondary={tokens.color.get('secondary')}, accent={tokens.color.get('accent')}")
+                logger.info(f"📝 Loaded CTAs: {tokens.cta_whitelist}")
 
             if policies_data:
                 if isinstance(policies_data, str):
                     policies_data = json.loads(policies_data)
                 policies = BrandPolicies.from_dict(policies_data)
+                logger.info(f"🗣️ Loaded Voice: {policies.voice}")
+                logger.info(f"🚫 Loaded Forbid: {policies.forbid}")
 
             return tokens, policies
 
