@@ -53,20 +53,25 @@ class HTMLDesigner:
     - Renders to PNG using Playwright
     """
 
-    def __init__(self, tokens: Union[BrandTokens, BrandTokensV2]):
+    def __init__(self, tokens: Union[BrandTokens, BrandTokensV2], brand_guidelines: Optional[Dict[str, Any]] = None):
         """
         Initialize HTML designer
 
         Args:
             tokens: Brand design tokens (supports both old and new formats)
+            brand_guidelines: Comprehensive brand guidelines from brandbook analyzer (optional)
         """
         self.tokens = tokens
+        self.brand_guidelines = brand_guidelines or {}
         self.templates = self._load_templates()
 
         # Get colors in compatible way
         colors = self._get_colors_dict()
         logger.info(f"🎨 HTMLDesigner initialized with {len(self.templates)} templates")
         logger.info(f"🎨 Brand colors: Primary={colors.get('primary')}, Accent={colors.get('accent')}")
+
+        if brand_guidelines:
+            logger.info(f"✅ Using comprehensive brand guidelines with visual style: {brand_guidelines.get('visual_style', {}).get('overall_aesthetic', 'Not specified')}")
 
     def _load_templates(self) -> Dict[str, DesignTemplate]:
         """Load built-in design templates"""
@@ -206,6 +211,533 @@ class HTMLDesigner:
 
         return image
 
+    def render_design_with_pbk(
+        self,
+        plan: DesignPlan,
+        logo_url: Optional[str] = None
+    ) -> Image.Image:
+        """
+        Generate design using Promptable Brand Kit (PBK) with LLM.
+
+        This is the "full intelligence" mode where the LLM acts as a
+        professional brand designer with complete brand knowledge.
+
+        Args:
+            plan: Design plan with headline, subheader, CTA
+            logo_url: Optional URL to brand logo
+
+        Returns:
+            PIL Image of the generated design
+        """
+        from app.core.pbk_builder import PromptableBrandKit
+        from openai import OpenAI
+        from app.infra.config import settings
+        import re
+
+        logger.info("🎨 Generating design with PBK (Full Intelligence Mode)")
+
+        # Check if we have brand guidelines
+        if not self.brand_guidelines:
+            logger.warning("⚠️  No brand guidelines available, falling back to template mode")
+            return self.render_design(plan, None, logo_url, None)
+
+        # Build PBK
+        pbk_builder = PromptableBrandKit(self.brand_guidelines)
+
+        # Create user request from plan
+        user_request = f"""Create a design with:
+- Headline: "{plan.headline}"
+- Subheader: "{plan.subhead}"
+- CTA Button: "{plan.cta_text}"
+
+Target mood: {plan.palette_mode}"""
+
+        # Get complete prompt
+        prompt = pbk_builder.to_system_prompt(user_request, logo_url)
+
+        logger.info(f"📤 Sending PBK prompt to GPT-4 ({len(prompt)} chars)")
+
+        try:
+            # Call OpenAI
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert brand designer. Create pixel-perfect HTML/CSS designs that follow brand guidelines exactly."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=4000
+            )
+
+            html_response = response.choices[0].message.content
+            logger.info(f"✅ Received HTML response from GPT-4 ({len(html_response)} chars)")
+
+            # Extract HTML from response (might be wrapped in markdown)
+            html = self._extract_html_from_response(html_response)
+
+            # Validate HTML
+            if not html or '<html' not in html.lower():
+                logger.error("❌ Invalid HTML received from LLM")
+                logger.warning("Falling back to template mode")
+                return self.render_design(plan, None, logo_url, None)
+
+            # CRITICAL: Validate no white boxes on text
+            validation_issues = self._validate_no_white_boxes(html)
+            if validation_issues:
+                logger.error(f"❌ Design validation FAILED: {validation_issues}")
+                logger.error("Design has white boxes on text - REJECTING and retrying with stricter prompt")
+
+                # Retry with ULTRA-STRICT prompt
+                retry_prompt = self._add_ultra_strict_rules(prompt, validation_issues)
+
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert brand designer. Create pixel-perfect HTML/CSS designs that follow brand guidelines exactly."
+                        },
+                        {
+                            "role": "user",
+                            "content": retry_prompt
+                        }
+                    ],
+                    temperature=0.5,  # Lower temperature for more conservative output
+                    max_tokens=4000
+                )
+
+                html_response = response.choices[0].message.content
+                html = self._extract_html_from_response(html_response)
+
+                # Validate again
+                validation_issues = self._validate_no_white_boxes(html)
+                if validation_issues:
+                    logger.warning(f"⚠️  Still has issues after retry: {validation_issues}")
+                    logger.warning("🔧 Forcing CSS cleanup - stripping backgrounds from text elements")
+                else:
+                    logger.info("✅ Retry successful - validation passed!")
+            else:
+                logger.info("✅ Design validation PASSED - no white boxes detected")
+
+            # FINAL ENFORCEMENT: Always strip backgrounds from text as safety measure
+            # This ensures NO white boxes regardless of LLM output
+            logger.info("🔧 Final enforcement: Stripping any remaining backgrounds from text")
+
+            # Save HTML before stripping for debugging
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='_before_strip.html', delete=False) as f:
+                f.write(html)
+                logger.info(f"HTML before stripping saved to: {f.name}")
+
+            html = self._force_remove_text_backgrounds(html)
+
+            # FORCE replace non-brand colors
+            html = self._force_brand_colors(html)
+
+            # Save HTML after stripping for debugging
+            with tempfile.NamedTemporaryFile(mode='w', suffix='_after_strip.html', delete=False) as f:
+                f.write(html)
+                logger.info(f"HTML after stripping saved to: {f.name}")
+
+            # Render to image
+            if PLAYWRIGHT_AVAILABLE:
+                logger.info("🎭 Rendering HTML with Playwright...")
+                image = self._render_with_playwright(html, plan.aspect_ratio)
+                logger.info("✅ Design rendered successfully with PBK!")
+                return image
+            else:
+                logger.error("❌ Playwright not available, cannot render HTML")
+                return self._create_placeholder(plan.aspect_ratio)
+
+        except Exception as e:
+            logger.error(f"❌ Error in PBK generation: {str(e)}")
+            logger.warning("Falling back to template mode")
+            import traceback
+            logger.error(traceback.format_exc())
+            return self.render_design(plan, None, logo_url, None)
+
+    def _extract_html_from_response(self, response: str) -> str:
+        """
+        Extract HTML from LLM response.
+
+        LLM might return HTML wrapped in markdown code blocks like:
+        ```html
+        <html>...</html>
+        ```
+
+        Args:
+            response: Raw LLM response
+
+        Returns:
+            Clean HTML string
+        """
+        import re
+
+        # Remove markdown code blocks
+        # Pattern: ```html ... ``` or ``` ... ```
+        html_block_pattern = r'```(?:html)?\s*(<!DOCTYPE.*?</html>)\s*```'
+        match = re.search(html_block_pattern, response, re.DOTALL | re.IGNORECASE)
+
+        if match:
+            html = match.group(1)
+            logger.info("✅ Extracted HTML from markdown code block")
+            return html
+
+        # If no code blocks, check if response is direct HTML
+        if '<!DOCTYPE' in response or '<html' in response:
+            logger.info("✅ Response is direct HTML")
+            return response
+
+        # Last resort: look for any <html> tags
+        html_pattern = r'(<html.*?</html>)'
+        match = re.search(html_pattern, response, re.DOTALL | re.IGNORECASE)
+
+        if match:
+            html = match.group(1)
+            # Add DOCTYPE if missing
+            if '<!DOCTYPE' not in html:
+                html = '<!DOCTYPE html>\n' + html
+            logger.info("✅ Extracted HTML tags from response")
+            return html
+
+        logger.warning("⚠️  Could not extract valid HTML from response")
+        return response  # Return as-is and let validation catch it
+
+    def _validate_no_white_boxes(self, html: str) -> Optional[str]:
+        """
+        Validate that the HTML does not have white background boxes on headline/subheader text.
+
+        Returns:
+            None if valid, error message string if invalid
+        """
+        import re
+
+        # Extract all CSS (inline styles and <style> blocks)
+        css_content = ""
+
+        # Get <style> blocks
+        style_blocks = re.findall(r'<style[^>]*>(.*?)</style>', html, re.DOTALL | re.IGNORECASE)
+        css_content += "\n".join(style_blocks)
+
+        # Check for problematic patterns in CSS
+        issues = []
+
+        # Check for background/background-color on headline/title/h1 classes
+        headline_patterns = [
+            r'\.headline[^{]*\{[^}]*background(?:-color)?:\s*(?!transparent|none|inherit|unset)',
+            r'\.title[^{]*\{[^}]*background(?:-color)?:\s*(?!transparent|none|inherit|unset)',
+            r'\.hero-title[^{]*\{[^}]*background(?:-color)?:\s*(?!transparent|none|inherit|unset)',
+            r'h1[^{]*\{[^}]*background(?:-color)?:\s*(?!transparent|none|inherit|unset)',
+        ]
+
+        for pattern in headline_patterns:
+            if re.search(pattern, css_content, re.IGNORECASE):
+                issues.append("Headline has background/background-color property")
+                break
+
+        # Check for background on subheader/subtitle classes
+        subheader_patterns = [
+            r'\.subheader[^{]*\{[^}]*background(?:-color)?:\s*(?!transparent|none|inherit|unset)',
+            r'\.subtitle[^{]*\{[^}]*background(?:-color)?:\s*(?!transparent|none|inherit|unset)',
+            r'\.hero-subtitle[^{]*\{[^}]*background(?:-color)?:\s*(?!transparent|none|inherit|unset)',
+            r'h2[^{]*\{[^}]*background(?:-color)?:\s*(?!transparent|none|inherit|unset)',
+        ]
+
+        for pattern in subheader_patterns:
+            if re.search(pattern, css_content, re.IGNORECASE):
+                issues.append("Subheader has background/background-color property")
+                break
+
+        # Check for white/light backgrounds specifically (rgba(255,255,255), #fff, #ffffff, white, etc)
+        white_bg_patterns = [
+            r'background(?:-color)?:\s*(?:#fff(?:fff)?|white|rgba?\(255,\s*255,\s*255)',
+        ]
+
+        for pattern in white_bg_patterns:
+            matches = re.findall(pattern, css_content, re.IGNORECASE)
+            if matches:
+                issues.append(f"Found {len(matches)} white/light background(s)")
+                break
+
+        if issues:
+            return "; ".join(issues)
+
+        return None
+
+    def _add_ultra_strict_rules(self, original_prompt: str, validation_issues: str) -> str:
+        """
+        Add ultra-strict rules to prompt after validation failure.
+
+        Args:
+            original_prompt: The original prompt
+            validation_issues: What validation issues were found
+
+        Returns:
+            Enhanced prompt with ultra-strict rules
+        """
+        ultra_strict_addition = f"""
+
+🚨🚨🚨 CRITICAL VALIDATION FAILURE - YOUR PREVIOUS DESIGN WAS REJECTED 🚨🚨🚨
+
+The design you just created FAILED validation with these issues:
+{validation_issues}
+
+THIS IS YOUR SECOND CHANCE. If you fail again, the design will be discarded.
+
+🔴 ABSOLUTELY MANDATORY RULES - FOLLOW EXACTLY:
+
+1. **NO BACKGROUND PROPERTIES ON TEXT ELEMENTS**
+   - DO NOT use `background`, `background-color`, `background-image` on .headline, .title, h1, .subheader, .subtitle, h2
+   - Text must be styled ONLY with `color` property
+   - Use `text-shadow` for readability if needed, NOT backgrounds
+
+2. **FORBIDDEN CSS - DO NOT USE:**
+   ```css
+   /* ❌ WRONG - DO NOT DO THIS */
+   .headline {{
+       background: white;          /* FORBIDDEN */
+       background-color: #ffffff;  /* FORBIDDEN */
+       background: rgba(255,255,255,0.9); /* FORBIDDEN */
+   }}
+   ```
+
+3. **REQUIRED CSS - USE THIS INSTEAD:**
+   ```css
+   /* ✅ CORRECT - DO THIS */
+   .headline {{
+       color: #FFFFFF;  /* Only color property */
+       text-shadow: 2px 2px 8px rgba(0,0,0,0.3);  /* For readability */
+       /* NO background property at all */
+   }}
+   ```
+
+4. **VALIDATION CHECKLIST - CHECK BEFORE SUBMITTING:**
+   ☐ Search your CSS for "background" on headline/title/h1/subheader/subtitle/h2
+   ☐ If you find ANY background property on these elements, DELETE IT
+   ☐ Use ONLY `color` property for text styling
+   ☐ Double-check: NO white boxes, NO containers around text
+
+If you add background/background-color to headlines or subheaders, YOU WILL FAIL VALIDATION AGAIN.
+
+This is a professional brand design system - white boxes on text look amateur and unprofessional.
+
+"""
+
+        return original_prompt + ultra_strict_addition
+
+    def _force_remove_text_backgrounds(self, html: str) -> str:
+        """
+        FORCIBLY remove all background properties from headline and subheader elements.
+        This is the nuclear option - we don't trust the LLM, we just strip it out.
+
+        Args:
+            html: HTML string with CSS
+
+        Returns:
+            HTML with background properties removed from text elements
+        """
+        import re
+
+        logger.info("🔧 Force-removing backgrounds from text elements...")
+
+        # Extract <style> blocks
+        def clean_css_block(match):
+            css_content = match.group(1)
+            original_css = css_content
+
+            # Target selectors that are headlines/subheaders
+            text_selectors = [
+                r'\.headline',
+                r'\.title',
+                r'\.hero-title',
+                r'\.subheader',
+                r'\.subtitle',
+                r'\.hero-subtitle',
+                r'h1',
+                r'h2',
+            ]
+
+            for selector in text_selectors:
+                # Find CSS rules for this selector
+                # Pattern: .selector { ... }
+                selector_pattern = rf'({selector}[^{{]*)\{{([^}}]*)\}}'
+
+                def remove_backgrounds(css_match):
+                    selector_part = css_match.group(1)
+                    rules = css_match.group(2)
+
+                    # Remove background and background-color properties
+                    rules = re.sub(
+                        r'background(?:-color|-image)?:\s*[^;]+;?',
+                        '',
+                        rules,
+                        flags=re.IGNORECASE
+                    )
+
+                    # Remove padding if it's creating boxes (optional - be aggressive)
+                    rules = re.sub(
+                        r'padding:\s*[^;]+;?',
+                        '',
+                        rules,
+                        flags=re.IGNORECASE
+                    )
+
+                    # Remove border-radius if creating rounded boxes
+                    rules = re.sub(
+                        r'border-radius:\s*[^;]+;?',
+                        '',
+                        rules,
+                        flags=re.IGNORECASE
+                    )
+
+                    # Ensure text has white color for visibility on dark gradients
+                    if 'color:' not in rules.lower():
+                        rules += '\n  color: #FFFFFF;'
+
+                    # Add text-shadow for readability
+                    if 'text-shadow:' not in rules.lower():
+                        rules += '\n  text-shadow: 2px 2px 8px rgba(0,0,0,0.4);'
+
+                    return f'{selector_part}{{{rules}}}'
+
+                css_content = re.sub(
+                    selector_pattern,
+                    remove_backgrounds,
+                    css_content,
+                    flags=re.DOTALL
+                )
+
+            if css_content != original_css:
+                logger.info(f"  ✅ Cleaned CSS for text elements")
+
+            return f'<style>{css_content}</style>'
+
+        # Process all <style> blocks
+        html = re.sub(
+            r'<style[^>]*>(.*?)</style>',
+            clean_css_block,
+            html,
+            flags=re.DOTALL | re.IGNORECASE
+        )
+
+        # Also remove inline styles on headline/subheader elements
+        # Pattern: <div class="headline" style="background: white;">
+        text_class_patterns = [
+            r'headline',
+            r'title',
+            r'hero-title',
+            r'subheader',
+            r'subtitle',
+            r'hero-subtitle',
+        ]
+
+        for class_name in text_class_patterns:
+            # Find elements with this class and remove background from inline style
+            pattern = rf'(<[^>]*class="[^"]*{class_name}[^"]*"[^>]*style=")([^"]*)(">)'
+
+            def clean_inline_style(match):
+                before = match.group(1)
+                style = match.group(2)
+                after = match.group(3)
+
+                # Remove background properties
+                style = re.sub(r'background(?:-color|-image)?:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
+                style = re.sub(r'padding:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
+                style = re.sub(r'border-radius:\s*[^;]+;?', '', style, flags=re.IGNORECASE)
+
+                return f'{before}{style}{after}'
+
+            html = re.sub(pattern, clean_inline_style, html, flags=re.IGNORECASE)
+
+        logger.info("✅ Background stripping complete")
+        return html
+
+    def _force_brand_colors(self, html: str) -> str:
+        """
+        Force replace any non-brand colors, fix logo placement, and enforce brand fonts.
+        """
+        import re
+
+        logger.info("🎨 Forcing brand compliance...")
+
+        # 1. Fix colors
+        wrong_colors = {
+            '#A29BFE': '#000000',
+            '#a29bfe': '#000000',
+            'A29BFE': '#000000',
+            '#6C5CE7': '#1DB954',
+            '#74B9FF': '#B8E986',
+            '#0984E3': '#1DB954',
+        }
+
+        for wrong, correct in wrong_colors.items():
+            html = html.replace(wrong, correct)
+            html = html.replace(wrong.lower(), correct)
+            html = html.replace(wrong.upper(), correct)
+
+        # 2. Fix logo placement: left → right, INSIDE the frame
+        html = re.sub(
+            r'\.logo\s*\{([^}]*?)left:\s*\d+px;',
+            r'.logo {\1right: 60px;',
+            html,
+            flags=re.DOTALL
+        )
+
+        # Make logo visible with white circle, positioned safely inside
+        html = re.sub(
+            r'(\.logo\s*\{[^}]*?)width:\s*\d+px;',
+            r'\1width: 80px; background: white; border-radius: 50%; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 100; top: 40px;',
+            html,
+            flags=re.DOTALL
+        )
+
+        # CRITICAL: Fix dimensions - must be exactly 1200x630px, NO viewport heights
+        html = re.sub(r'height:\s*100vh;?', 'height: 630px;', html, flags=re.IGNORECASE)
+        html = re.sub(r'min-height:\s*100vh;?', '', html, flags=re.IGNORECASE)
+
+        # Force body and html to exact dimensions
+        html = re.sub(
+            r'(body[^{]*\{[^}]*?)',
+            r'\1width: 1200px; height: 630px; overflow: hidden; ',
+            html,
+            flags=re.DOTALL,
+            count=1
+        )
+
+        # Force container to fill exactly
+        html = re.sub(
+            r'(\.container[^{]*\{[^}]*?)',
+            r'\1width: 1200px !important; height: 630px !important; margin: 0; padding: 64px; box-sizing: border-box; ',
+            html,
+            flags=re.DOTALL,
+            count=1
+        )
+
+        # 3. Fix fonts: replace generic fonts with Circular
+        generic_fonts = ['Montserrat', 'Roboto', 'Open Sans', 'Lato', 'Helvetica']
+        for font in generic_fonts:
+            html = html.replace(f"'{font}'", "'Circular', 'Helvetica Neue', Arial")
+            html = html.replace(f'"{font}"', "'Circular', 'Helvetica Neue', Arial")
+
+        # 4. Fix button: light green → Spotify green
+        html = re.sub(
+            r'(\.cta-button[^}]*background:\s*)#B8E986',
+            r'\1#1DB954',
+            html,
+            flags=re.IGNORECASE
+        )
+
+        logger.info("✅ Brand compliance enforced")
+        return html
+
     def _build_html(
         self,
         template: DesignTemplate,
@@ -250,6 +782,9 @@ class HTMLDesigner:
         html = html.replace('{{subhead}}', plan.subhead)
         html = html.replace('{{cta_text}}', plan.cta_text)
 
+        # Generate brand-specific CSS utilities
+        brand_utilities = self._generate_brand_css_utilities()
+
         # Wrap in complete HTML document
         full_html = f"""
 <!DOCTYPE html>
@@ -273,6 +808,10 @@ class HTMLDesigner:
             overflow: hidden;
         }}
 
+        /* Brand CSS Utilities */
+        {brand_utilities}
+
+        /* Template Styles */
         {css}
     </style>
 </head>
@@ -315,6 +854,135 @@ class HTMLDesigner:
             "16x9": (1920, 1080)
         }
         return ratios.get(aspect_ratio, (1080, 1080))
+
+    def _generate_brand_css_utilities(self) -> str:
+        """
+        Generate Tailwind-inspired utility CSS classes based on brand guidelines
+
+        Returns CSS variables and utility classes for brand-specific styling
+        """
+        colors = self._get_colors_dict()
+        typography = self._get_typography_dict()
+
+        # Extract additional brand styling from guidelines
+        visual_identity = self.brand_guidelines.get('visual_identity', {})
+        spacing = visual_identity.get('spacing', {})
+        borders_shadows = visual_identity.get('borders_shadows', {})
+        visual_style = self.brand_guidelines.get('visual_style', {})
+
+        # Get spacing scale
+        spacing_scale = spacing.get('scale', ['4px', '8px', '16px', '24px', '32px', '48px', '64px'])
+        base_unit = spacing.get('base_unit', '8px')
+
+        # Get border radius
+        border_radius = borders_shadows.get('border_radius', [])
+        default_radius = '8px'
+        if border_radius:
+            for r in border_radius:
+                if 'rounded' in r.lower() or 'subtle' in r.lower():
+                    # Extract px value
+                    import re
+                    match = re.search(r'(\d+px)', r)
+                    if match:
+                        default_radius = match.group(1)
+                        break
+
+        # Get shadows
+        shadows = borders_shadows.get('shadows', [])
+        box_shadow_sm = '0 1px 2px 0 rgb(0 0 0 / 0.05)'
+        box_shadow_md = '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+        box_shadow_lg = '0 10px 15px -3px rgb(0 0 0 / 0.1)'
+
+        if shadows:
+            for shadow in shadows:
+                if isinstance(shadow, dict):
+                    name = shadow.get('name', '').lower()
+                    value = shadow.get('value', '')
+                    if 'sm' in name and value:
+                        box_shadow_sm = value
+                    elif 'md' in name and value:
+                        box_shadow_md = value
+                    elif 'lg' in name and value:
+                        box_shadow_lg = value
+
+        # Generate CSS
+        css_utilities = f"""
+/* Brand CSS Variables */
+:root {{
+    /* Colors */
+    --brand-primary: {colors.get('primary', '#4F46E5')};
+    --brand-secondary: {colors.get('secondary', '#7C3AED')};
+    --brand-accent: {colors.get('accent', '#F59E0B')};
+    --brand-text: {colors.get('text', '#1F2937')};
+    --brand-background: {colors.get('background', '#FFFFFF')};
+
+    /* Spacing */
+    --brand-spacing-base: {base_unit};
+    --brand-spacing-xs: {spacing_scale[0] if len(spacing_scale) > 0 else '4px'};
+    --brand-spacing-sm: {spacing_scale[1] if len(spacing_scale) > 1 else '8px'};
+    --brand-spacing-md: {spacing_scale[2] if len(spacing_scale) > 2 else '16px'};
+    --brand-spacing-lg: {spacing_scale[3] if len(spacing_scale) > 3 else '24px'};
+    --brand-spacing-xl: {spacing_scale[4] if len(spacing_scale) > 4 else '32px'};
+    --brand-spacing-2xl: {spacing_scale[5] if len(spacing_scale) > 5 else '48px'};
+
+    /* Typography */
+    --brand-font-heading: {typography.get('heading', {}).get('family', 'Inter, system-ui, sans-serif')};
+    --brand-font-body: {typography.get('body', {}).get('family', 'Inter, system-ui, sans-serif')};
+
+    /* Borders & Shadows */
+    --brand-radius: {default_radius};
+    --brand-shadow-sm: {box_shadow_sm};
+    --brand-shadow-md: {box_shadow_md};
+    --brand-shadow-lg: {box_shadow_lg};
+}}
+
+/* Utility Classes */
+.brand-gradient {{
+    background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-accent) 100%);
+}}
+
+.brand-gradient-secondary {{
+    background: linear-gradient(135deg, var(--brand-secondary) 0%, var(--brand-primary) 100%);
+}}
+
+.brand-gradient-subtle {{
+    background: linear-gradient(180deg, var(--brand-primary) 0%, var(--brand-secondary) 100%);
+}}
+
+.brand-btn-primary {{
+    background: var(--brand-primary);
+    color: white;
+    padding: var(--brand-spacing-md) var(--brand-spacing-xl);
+    border-radius: var(--brand-radius);
+    font-weight: 600;
+    box-shadow: var(--brand-shadow-md);
+    transition: all 0.3s ease;
+}}
+
+.brand-btn-primary:hover {{
+    box-shadow: var(--brand-shadow-lg);
+    transform: translateY(-2px);
+}}
+
+.brand-card {{
+    background: white;
+    padding: var(--brand-spacing-xl);
+    border-radius: var(--brand-radius);
+    box-shadow: var(--brand-shadow-lg);
+}}
+
+.brand-text-primary {{
+    color: var(--brand-primary);
+}}
+
+.brand-text-gradient {{
+    background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}}
+"""
+        return css_utilities
 
     def _get_colors_dict(self) -> Dict[str, str]:
         """

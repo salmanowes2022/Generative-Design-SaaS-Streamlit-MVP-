@@ -229,34 +229,50 @@ Extract ALL brand guidelines visible on this page:
    - Photography style (lifestyle, product, abstract, etc.)
    - Image treatment (filters, cropping, composition)
    - Illustration style (if applicable)
-   - Icon style
+   - Icon style (outline/filled, rounded/sharp, stroke weight)
 
-3. LAYOUT & COMPOSITION:
+3. VISUAL ASSETS (CRITICAL - Describe ALL visual elements visible):
+   - Brand characters or mascots (describe appearance, personality, usage)
+   - Icons and icon sets (describe style, when to use each)
+   - Illustrations (describe style, subject matter, color treatment)
+   - Patterns and textures (geometric, organic, abstract - describe in detail)
+   - Decorative elements (shapes, dividers, ornaments)
+   - Photography examples (describe style, composition, subject)
+   - Graphic elements (badges, stamps, frames, borders)
+   - Background treatments (gradients, overlays, textures)
+
+4. LAYOUT & COMPOSITION:
    - Grid system (columns, gutters, margins)
    - Spacing rules (padding, gaps, breathing room)
    - Composition principles (balance, hierarchy, focal points)
    - Page layout examples
 
-4. BRAND MESSAGING:
+5. BRAND MESSAGING:
    - Brand voice description (tone, personality)
    - Writing style guidelines
    - Key messages or taglines
    - Brand values or mission
 
-5. USAGE EXAMPLES:
+6. USAGE EXAMPLES:
    - Application examples (business cards, social media, websites)
    - Do's and Don'ts
    - Best practices
    - Common mistakes to avoid
 
-6. PATTERNS & ELEMENTS:
-   - Decorative elements or patterns
-   - Graphic devices
-   - Shape usage
-   - Texture or background styles
+7. ASSET INVENTORY (NEW - List EVERYTHING visual you see):
+   - Character/mascot names and descriptions
+   - Icon categories and their meanings
+   - Pattern/texture names and where they're used
+   - Photography subjects and themes
+   - Illustration themes and styles
+
+IMPORTANT: If you see brand characters, mascots, custom icons, or unique graphic elements:
+- Describe them in DETAIL (colors, shapes, personality, emotions)
+- Note where and how they should be used
+- Describe their relationship to the brand identity
 
 Return detailed JSON with everything you can extract from this page.
-Be SPECIFIC - include measurements, exact color codes, specific font names, precise rules."""
+Be SPECIFIC - include measurements, exact color codes, specific font names, precise rules, and DETAILED descriptions of ALL visual assets."""
 
         try:
             response = self.client.chat.completions.create(
@@ -333,7 +349,7 @@ Be SPECIFIC - include measurements, exact color codes, specific font names, prec
             logger.error("No usable content found in PDF")
             return self._get_default_guidelines(brand_name)
 
-        synthesis_prompt = f"""You are analyzing a brand book for "{brand_name}".
+        synthesis_prompt = f"""You are an expert brand strategist analyzing a comprehensive brand book for "{brand_name}".
 
 VISION ANALYSIS OF PAGES:
 {pages_summary}
@@ -341,9 +357,19 @@ VISION ANALYSIS OF PAGES:
 TEXT CONTENT FROM PDF:
 {text_summary}
 
-IMPORTANT: Extract as much information as possible from the available data above. If visual analysis is not available, focus heavily on the text content to extract brand guidelines.
+CRITICAL REQUIREMENTS:
+1. Extract EVERY element mentioned - colors (ALL shades), fonts (ALL weights/styles), spacing values, patterns
+2. Capture the VISUAL STYLE deeply - modern/classic, minimal/ornate, bold/subtle, playful/serious
+3. Extract EXACT values whenever possible - hex colors, font names, spacing in px/rem, border radius
+4. Identify DESIGN PATTERNS - button styles, card layouts, gradient directions, shadow depths
+5. Understand BRAND PERSONALITY - is it tech-forward? Luxury? Playful? Professional? Bold? Elegant?
+6. Note IMAGERY PREFERENCES - photography vs illustrations, color vs B&W, abstract vs literal
+7. Extract SPACING/LAYOUT RULES - grid systems, margins, padding, gaps between elements
+8. Identify ANIMATION/MOTION preferences if mentioned - smooth/snappy, subtle/dramatic
+9. Capture DO/DON'T examples with specific details
+10. If visual analysis unavailable, extract maximum detail from text content
 
-Synthesize COMPLETE, ACTIONABLE brand guidelines:
+Synthesize COMPLETE, ACTIONABLE, PIXEL-PERFECT brand guidelines for design generation:
 
 Return comprehensive JSON:
 {{
@@ -353,21 +379,43 @@ Return comprehensive JSON:
         "logo": {{
             "variations": ["primary", "secondary", "icon", "wordmark"],
             "usage_rules": ["rule1", "rule2"],
-            "clear_space": "description",
-            "minimum_size": "description",
-            "placement_guidelines": ["guideline1", "guideline2"]
+            "clear_space": "exact value if provided",
+            "minimum_size": "exact pixel/rem value",
+            "placement_guidelines": ["specific position rules"],
+            "color_versions": ["full color", "black", "white", "single color"]
         }},
         "colors": {{
-            "primary": {{"name": "name", "hex": "#HEX", "usage": "description"}},
-            "secondary": {{"name": "name", "hex": "#HEX", "usage": "description"}},
-            "accent": [{{"name": "name", "hex": "#HEX", "usage": "description"}}],
-            "usage_rules": ["rule1", "rule2"]
+            "primary": {{"name": "name", "hex": "#EXACT", "rgb": "rgb(r,g,b)", "usage": "when and where"}},
+            "secondary": {{"name": "name", "hex": "#EXACT", "rgb": "rgb(r,g,b)", "usage": "when and where"}},
+            "accent": [{{"name": "name", "hex": "#EXACT", "rgb": "rgb(r,g,b)", "usage": "specific use case"}}],
+            "neutral": [{{"name": "gray-900/800/etc", "hex": "#EXACT", "usage": "text/backgrounds"}}],
+            "semantic": {{
+                "success": "#HEX if mentioned",
+                "error": "#HEX if mentioned",
+                "warning": "#HEX if mentioned",
+                "info": "#HEX if mentioned"
+            }},
+            "gradients": [{{"type": "linear/radial", "colors": ["#HEX1", "#HEX2"], "direction": "degree or position", "usage": "where used"}}],
+            "usage_rules": ["specific color pairing rules", "contrast requirements", "background rules"]
         }},
         "typography": {{
-            "heading_font": {{"family": "name", "weights": ["weight"], "usage": "description"}},
-            "body_font": {{"family": "name", "weights": ["weight"], "usage": "description"}},
-            "hierarchy": ["H1 rules", "H2 rules", "Body rules"],
-            "usage_rules": ["rule1", "rule2"]
+            "heading_font": {{"family": "EXACT font name", "weights": [300, 400, 700, 900], "sizes": {{"h1": "px", "h2": "px"}}, "line_height": "value", "letter_spacing": "value"}},
+            "body_font": {{"family": "EXACT font name", "weights": [400, 600], "sizes": {{"body": "px", "small": "px"}}, "line_height": "value"}},
+            "hierarchy": ["H1: size, weight, usage", "H2: size, weight, usage", "Body: size, weight, usage"],
+            "scale": "modular scale if mentioned (1.25, 1.5, etc)",
+            "usage_rules": ["when to use each font", "pairing rules"]
+        }},
+        "spacing": {{
+            "base_unit": "4px, 8px, etc - the fundamental spacing unit",
+            "scale": ["4px", "8px", "16px", "24px", "32px", "48px", "64px"],
+            "margins": "specific margin values",
+            "padding": "specific padding values",
+            "gaps": "gap between elements"
+        }},
+        "borders_shadows": {{
+            "border_radius": ["sharp (0px)", "subtle (4px)", "rounded (8px)", "pill (999px)"],
+            "border_width": "1px, 2px, etc",
+            "shadows": [{{"name": "sm/md/lg", "value": "CSS shadow value", "usage": "when to use"}}]
         }}
     }},
 
@@ -397,10 +445,70 @@ Return comprehensive JSON:
     }},
 
     "design_patterns": {{
-        "visual_elements": ["element1", "element2"],
-        "graphic_devices": ["device1", "device2"],
-        "patterns": "description of brand patterns",
-        "textures": "description of textures/backgrounds"
+        "visual_elements": ["specific decorative elements used"],
+        "graphic_devices": ["shapes, lines, dividers used"],
+        "patterns": "geometric patterns, textures, background treatments",
+        "textures": "smooth/rough, gradients/solid, minimal/detailed",
+        "button_styles": [{{"type": "primary/secondary", "background": "#HEX", "text": "#HEX", "border_radius": "px", "padding": "px", "shadow": "value"}}],
+        "card_styles": [{{"background": "#HEX or gradient", "border_radius": "px", "shadow": "value", "padding": "px"}}],
+        "iconography": "style description - outline/filled, rounded/sharp, stroke weight"
+    }},
+
+    "brand_assets": {{
+        "characters": [{{
+            "name": "character name",
+            "description": "detailed physical description - colors, shapes, style",
+            "personality": "friendly, playful, professional, etc",
+            "usage_context": "when and where to use this character",
+            "emotions_poses": ["happy", "excited", "thinking", "etc"],
+            "on_page": "page number where found"
+        }}],
+        "icons": [{{
+            "category": "icon category name",
+            "style": "outline/filled/duotone, stroke weight, corner radius",
+            "examples": ["icon1", "icon2", "icon3"],
+            "usage": "when to use these icons",
+            "on_page": "page number"
+        }}],
+        "illustrations": [{{
+            "theme": "illustration theme or subject",
+            "style": "flat/3D/hand-drawn/geometric",
+            "color_treatment": "full color/monochrome/duotone",
+            "description": "detailed description of illustration style",
+            "usage": "where illustrations are used",
+            "on_page": "page number"
+        }}],
+        "patterns_textures": [{{
+            "name": "pattern name",
+            "type": "geometric/organic/abstract",
+            "description": "detailed description of pattern",
+            "colors_used": ["#HEX1", "#HEX2"],
+            "usage": "backgrounds, accents, etc",
+            "on_page": "page number"
+        }}],
+        "photography_examples": [{{
+            "subject": "what is photographed",
+            "style": "lifestyle/product/abstract/etc",
+            "composition": "composition rules - rule of thirds, centered, etc",
+            "color_grade": "warm/cool/vibrant/muted",
+            "description": "detailed description",
+            "on_page": "page number"
+        }}],
+        "graphic_elements": [{{
+            "type": "badge/stamp/frame/border/divider",
+            "style": "description of visual style",
+            "usage": "when and how to use",
+            "on_page": "page number"
+        }}]
+    }},
+
+    "visual_style": {{
+        "overall_aesthetic": "modern/classic, minimal/maximal, bold/subtle, playful/serious, tech/organic",
+        "mood": "professional, energetic, calm, luxurious, approachable, innovative",
+        "design_approach": "flat/skeuomorphic, brutalist/refined, geometric/organic",
+        "preferred_layouts": "centered/asymmetric, grid-based/freeform, spacious/compact",
+        "animation_style": "smooth/snappy, subtle/dramatic, fast/slow (if mentioned)",
+        "graphic_style": "photography-heavy, illustration-based, minimal graphics, data-viz focused"
     }},
 
     "usage_guidelines": {{

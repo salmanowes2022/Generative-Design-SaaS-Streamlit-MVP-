@@ -174,23 +174,18 @@ class ModernRenderer:
             headline_y + headline_h + padding
         ]
 
-        # Draw background
-        overlay = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
-        overlay_draw = ImageDraw.Draw(overlay)
-        overlay_draw.rounded_rectangle(bg_box, radius=20, fill=(255, 255, 255, 240))
-
-        canvas = canvas.convert('RGBA')
-        canvas = Image.alpha_composite(canvas, overlay)
-        canvas = canvas.convert('RGB')
+        # NO WHITE BACKGROUND - Draw text directly on gradient
         draw = ImageDraw.Draw(canvas)
 
-        # Draw headline text (black)
+        # Draw headline text (white for visibility on dark gradient)
         draw.multiline_text(
             (headline_x, headline_y),
             headline_wrapped,
             font=headline_font,
-            fill=(0, 0, 0),
-            align='center'
+            fill=(255, 255, 255),  # White text
+            align='center',
+            stroke_width=2,
+            stroke_fill=(0, 0, 0)  # Black outline for readability
         )
 
         # SUBHEAD - Medium size, centered
@@ -217,21 +212,15 @@ class ModernRenderer:
                 subhead_y + subhead_h + sub_padding
             ]
 
-            overlay = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
-            overlay_draw = ImageDraw.Draw(overlay)
-            overlay_draw.rounded_rectangle(sub_bg_box, radius=15, fill=(255, 255, 255, 220))
-
-            canvas = canvas.convert('RGBA')
-            canvas = Image.alpha_composite(canvas, overlay)
-            canvas = canvas.convert('RGB')
-            draw = ImageDraw.Draw(canvas)
-
+            # NO WHITE BACKGROUND - Draw subheader directly on gradient
             draw.multiline_text(
                 (subhead_x, subhead_y),
                 subhead_wrapped,
                 font=subhead_font,
-                fill=(40, 40, 40),
-                align='center'
+                fill=(255, 255, 255),  # White text
+                align='center',
+                stroke_width=1,
+                stroke_fill=(0, 0, 0)  # Black outline
             )
 
         # CTA BUTTON - Bottom center, prominent

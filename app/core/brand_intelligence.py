@@ -28,7 +28,8 @@ class BrandIntelligence:
         org_id: UUID,
         brand_name: str,
         guidelines: Dict[str, Any],
-        examples_analysis: Optional[Dict[str, Any]] = None
+        examples_analysis: Optional[Dict[str, Any]] = None,
+        brand_kit_id: Optional[UUID] = None
     ) -> None:
         """
         Save comprehensive brand intelligence to database
@@ -38,6 +39,7 @@ class BrandIntelligence:
             brand_name: Brand name
             guidelines: Extracted brand guidelines from PDF
             examples_analysis: Analysis from design examples
+            brand_kit_id: Optional brand kit UUID to associate with
         """
         try:
             db = get_db()
@@ -57,26 +59,38 @@ class BrandIntelligence:
             }
 
             # Upsert to brand_guidelines table
-            # First check if guidelines exist for this org
-            existing = db.fetch_one("""
-                SELECT id FROM brand_guidelines WHERE org_id = %s LIMIT 1
-            """, (str(org_id),))
+            # Check if guidelines exist for this brand_kit_id (if provided) or org_id
+            if brand_kit_id:
+                existing = db.fetch_one("""
+                    SELECT id FROM brand_guidelines WHERE brand_kit_id = %s LIMIT 1
+                """, (str(brand_kit_id),))
+            else:
+                existing = db.fetch_one("""
+                    SELECT id FROM brand_guidelines WHERE org_id = %s AND brand_kit_id IS NULL LIMIT 1
+                """, (str(org_id),))
 
             if existing:
                 # Update existing record
-                db.execute("""
-                    UPDATE brand_guidelines
-                    SET guidelines = %s, updated_at = NOW()
-                    WHERE org_id = %s
-                """, (json.dumps(brand_intelligence), str(org_id)))
+                if brand_kit_id:
+                    db.execute("""
+                        UPDATE brand_guidelines
+                        SET guidelines = %s, updated_at = NOW()
+                        WHERE brand_kit_id = %s
+                    """, (json.dumps(brand_intelligence), str(brand_kit_id)))
+                else:
+                    db.execute("""
+                        UPDATE brand_guidelines
+                        SET guidelines = %s, updated_at = NOW()
+                        WHERE org_id = %s AND brand_kit_id IS NULL
+                    """, (json.dumps(brand_intelligence), str(org_id)))
             else:
                 # Insert new record with required fields
                 db.execute("""
-                    INSERT INTO brand_guidelines (org_id, title, guidelines, created_at, updated_at)
-                    VALUES (%s, %s, %s, NOW(), NOW())
-                """, (str(org_id), 'Brand Intelligence', json.dumps(brand_intelligence)))
+                    INSERT INTO brand_guidelines (org_id, brand_kit_id, title, guidelines, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, NOW(), NOW())
+                """, (str(org_id), str(brand_kit_id) if brand_kit_id else None, 'Brand Intelligence', json.dumps(brand_intelligence)))
 
-            logger.info(f"Saved brand intelligence for org {org_id}")
+            logger.info(f"Saved brand intelligence for org {org_id}" + (f", brand_kit {brand_kit_id}" if brand_kit_id else ""))
 
         except Exception as e:
             logger.error(f"Error saving brand intelligence: {str(e)}")

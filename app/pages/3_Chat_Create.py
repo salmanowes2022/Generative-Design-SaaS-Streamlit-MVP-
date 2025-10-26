@@ -70,9 +70,14 @@ def init_chat_agent():
         tokens_old, policies = brand_brain.get_brand_brain(selected_kit.id)
 
         if not tokens_old:
-            st.sidebar.warning("⚠️ Brand Brain not configured. Using defaults.")
+            st.sidebar.error("❌ Brand Brain not configured. Using DEFAULT COLORS (not your brand)!")
+            st.sidebar.warning("⚠️ Go to 'Onboard Brand Kit' to set up your brand colors and voice.")
             tokens_old = BrandTokens.get_default_tokens()
             policies = BrandPolicies.get_default_policies()
+            logger.warning(f"No brand brain found for kit {selected_kit.id}, using defaults")
+        else:
+            # Show what was loaded
+            logger.info(f"✅ Loaded brand brain: Primary={tokens_old.color.get('primary')}, Voice={policies.voice if policies else 'None'}")
 
         # Convert to BrandTokensV2 for Modern Renderer
         from app.core.schemas_v2 import BrandTokensV2, ColorPalette, ColorToken
@@ -125,26 +130,90 @@ def render_chat_interface():
     st.session_state.current_tokens = tokens
     st.session_state.current_policies = policies
 
-    # Brand stats
-    with st.sidebar.expander("📊 Brand Stats"):
-        # Handle both BrandTokensV2 and old BrandTokens
+    # Brand stats - ENHANCED with actual values
+    with st.sidebar.expander("📊 Brand Data Loaded", expanded=True):
+        # Show actual brand colors
         if hasattr(tokens, 'colors'):
             # BrandTokensV2 format
-            color_count = 3 if tokens.colors else 0
-            st.write(f"**Colors:** {color_count} (Primary, Secondary, Accent)")
+            st.write("**🎨 Brand Colors:**")
+            st.markdown(f"<div style='background:{tokens.colors.primary.hex}; padding:8px; border-radius:4px; margin:4px 0;'><b>Primary:</b> {tokens.colors.primary.hex}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background:{tokens.colors.secondary.hex}; padding:8px; border-radius:4px; margin:4px 0;'><b>Secondary:</b> {tokens.colors.secondary.hex}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background:{tokens.colors.accent.hex}; padding:8px; border-radius:4px; margin:4px 0;'><b>Accent:</b> {tokens.colors.accent.hex}</div>", unsafe_allow_html=True)
         else:
             # Old BrandTokens format
-            st.write(f"**Colors:** {len([c for c in [tokens.color.get('primary'), tokens.color.get('secondary')] if c])}")
+            st.write("**🎨 Brand Colors:**")
+            st.write(f"Primary: {tokens.color.get('primary', 'Not set')}")
+            st.write(f"Secondary: {tokens.color.get('secondary', 'Not set')}")
+            st.write(f"Accent: {tokens.color.get('accent', 'Not set')}")
 
-        # CTA whitelist
-        if hasattr(tokens, 'policies') and tokens.policies:
-            st.write(f"**Approved CTAs:** {len(tokens.policies.cta_whitelist) if tokens.policies.cta_whitelist else 0}")
-        elif hasattr(tokens, 'cta_whitelist'):
-            st.write(f"**Approved CTAs:** {len(tokens.cta_whitelist)}")
+        # Voice traits
         if policies and policies.voice:
-            # Handle both list and string types
+            st.write("**🗣️ Brand Voice:**")
             voice_traits = policies.voice if isinstance(policies.voice, list) else [policies.voice]
-            st.write(f"**Voice Traits:** {', '.join(voice_traits[:3])}")
+            for trait in voice_traits[:5]:
+                st.write(f"  • {trait}")
+        else:
+            st.warning("⚠️ No brand voice configured")
+
+    # NEW: Show brand assets from brand guidelines
+    try:
+        from uuid import UUID
+        from app.core.brandbook_analyzer import BrandBookAnalyzer
+        analyzer = BrandBookAnalyzer()
+        org_uuid = UUID(st.session_state.org_id)
+        brand_guidelines = analyzer.get_brand_guidelines(org_uuid)
+
+        if brand_guidelines and 'brand_assets' in brand_guidelines:
+            with st.sidebar.expander("🎨 Brand Assets Available"):
+                brand_assets = brand_guidelines.get('brand_assets', {})
+
+                # Characters
+                characters = brand_assets.get('characters', [])
+                if characters:
+                    st.write(f"**👾 Characters:** {len(characters)}")
+                    for char in characters[:3]:
+                        st.write(f"  • {char.get('name', 'Unnamed')}: {char.get('personality', '')}")
+
+                # Icons
+                icons = brand_assets.get('icons', [])
+                if icons:
+                    st.write(f"**🔷 Icon Sets:** {len(icons)}")
+                    for icon_set in icons[:2]:
+                        st.write(f"  • {icon_set.get('category', 'Icons')}: {icon_set.get('style', '')}")
+
+                # Illustrations
+                illustrations = brand_assets.get('illustrations', [])
+                if illustrations:
+                    st.write(f"**🖼️ Illustrations:** {len(illustrations)}")
+                    for ill in illustrations[:2]:
+                        st.write(f"  • {ill.get('theme', 'Style')}: {ill.get('style', '')}")
+
+                # Patterns
+                patterns = brand_assets.get('patterns_textures', [])
+                if patterns:
+                    st.write(f"**📐 Patterns:** {len(patterns)}")
+                    for pattern in patterns[:2]:
+                        st.write(f"  • {pattern.get('name', 'Pattern')}")
+
+                if not (characters or icons or illustrations or patterns):
+                    st.info("Upload brand book to extract characters, icons, patterns!")
+                else:
+                    st.success(f"✅ {len(characters) + len(icons) + len(illustrations) + len(patterns)} assets ready!")
+
+                # Store in session for design generation
+                st.session_state.brand_guidelines = brand_guidelines
+
+                # Show PBK status
+                st.sidebar.markdown("---")
+                st.sidebar.success("🚀 **Full Intelligence Mode Active**")
+                st.sidebar.caption("AI will use complete brand knowledge from your brand book to create designs")
+
+    except Exception as e:
+        logger.debug(f"Could not load brand assets: {e}")
+        # Not critical - continue without assets
+        st.sidebar.markdown("---")
+        st.sidebar.info("🎨 **Template Mode Active**")
+        st.sidebar.caption("Upload brand book for full intelligence mode")
 
     st.sidebar.markdown("---")
 
@@ -232,16 +301,43 @@ def render_chat_interface():
                         # Initialize design engine with brand tokens from session state
                         tokens = st.session_state.current_tokens
 
-                        # DEBUG: Log what colors we're actually using
-                        if hasattr(tokens, 'colors'):
-                            st.write(f"🔍 DEBUG - Colors being used:")
-                            st.write(f"  Primary: {tokens.colors.primary.hex}")
-                            st.write(f"  Secondary: {tokens.colors.secondary.hex}")
-                            st.write(f"  Accent: {tokens.colors.accent.hex}")
-                        else:
-                            st.write(f"🔍 DEBUG - OLD token format: {tokens.color if hasattr(tokens, 'color') else 'No color data'}")
+                        # DEBUG: PROMINENT color check
+                        st.markdown("---")
+                        st.markdown("### 🔍 BRAND COLORS LOADED")
 
-                        engine = DesignEngine(tokens, use_html=True)
+                        if hasattr(tokens, 'colors'):
+                            primary = tokens.colors.primary.hex
+                            secondary = tokens.colors.secondary.hex
+                            accent = tokens.colors.accent.hex
+
+                            # Show color boxes
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.markdown(f"<div style='background:{primary}; padding:20px; border-radius:8px; text-align:center; color:white;'><b>Primary</b><br/>{primary}</div>", unsafe_allow_html=True)
+                            with col2:
+                                st.markdown(f"<div style='background:{secondary}; padding:20px; border-radius:8px; text-align:center; color:white;'><b>Secondary</b><br/>{secondary}</div>", unsafe_allow_html=True)
+                            with col3:
+                                st.markdown(f"<div style='background:{accent}; padding:20px; border-radius:8px; text-align:center; color:white;'><b>Accent</b><br/>{accent}</div>", unsafe_allow_html=True)
+
+                            # Check if using defaults
+                            if primary == '#4F46E5' and accent == '#F59E0B':
+                                st.error("🚨 USING DEFAULT COLORS! Your brand brain is NOT configured!")
+                                st.error("👉 Go to 'Onboard Brand Kit' to set YOUR brand colors!")
+                            else:
+                                st.success(f"✅ Using YOUR custom brand colors!")
+                        else:
+                            st.error("❌ No color data found!")
+
+                        st.markdown("---")
+
+                        # Get brand guidelines if available
+                        brand_guidelines = None
+                        if hasattr(st.session_state, 'brand_guidelines'):
+                            brand_guidelines = st.session_state.brand_guidelines
+                            if brand_guidelines and 'brand_assets' in brand_guidelines:
+                                st.info("🎨 Using brand assets from your brand book (characters, icons, patterns)")
+
+                        engine = DesignEngine(tokens, use_html=True, brand_guidelines=brand_guidelines)
 
                         # Show renderer info
                         renderer_info = engine.get_renderer_info()
@@ -377,12 +473,59 @@ def render_chat_interface():
                             content_type="image/png"
                         )
 
+                        # Save to database (design library)
+                        try:
+                            from app.infra.db import db
+                            import json
+
+                            # Get brand kit ID if available
+                            brand_kit_id = None
+                            if hasattr(st.session_state, 'brand_kit') and st.session_state.brand_kit:
+                                brand_kit_id = st.session_state.brand_kit.id
+
+                            # Save to assets table (design library)
+                            db.execute("""
+                                INSERT INTO assets (
+                                    org_id,
+                                    brand_kit_id,
+                                    url,
+                                    design_plan,
+                                    quality_score,
+                                    generation_metadata,
+                                    created_at
+                                ) VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                            """, (
+                                str(st.session_state.org_id),
+                                str(brand_kit_id) if brand_kit_id else None,
+                                design_url,
+                                json.dumps({
+                                    'headline': plan.headline,
+                                    'subhead': plan.subhead,
+                                    'cta_text': plan.cta_text,
+                                    'channel': plan.channel,
+                                    'aspect_ratio': plan.aspect_ratio,
+                                    'palette_mode': design_variations[selected_variation]['palette_mode']
+                                }),
+                                quality_score,
+                                json.dumps({
+                                    'mode': 'pbk_intelligence' if st.session_state.get('brand_guidelines') else 'template',
+                                    'created_from': 'chat_interface',
+                                    'variations_generated': len(design_variations)
+                                })
+                            ))
+
+                            logger.info(f"✅ Design saved to library: {file_path}")
+
+                        except Exception as db_error:
+                            logger.warning(f"Could not save to design library: {db_error}")
+                            # Don't block the user if database save fails
+
                         # Save image and URL to session state
                         st.session_state.current_design_image = design_image
                         st.session_state.current_design = design_url
                         st.session_state.current_quality = quality_score
 
-                        st.success("🎉 Beautiful design created!")
+                        st.success("🎉 Beautiful design created and saved to your library!")
                         st.rerun()
 
                     except Exception as e:

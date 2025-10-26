@@ -31,21 +31,34 @@ class DesignEngine:
     - Beautiful, human-quality designs
     """
 
-    def __init__(self, tokens: Union[BrandTokens, BrandTokensV2], use_html: bool = True):
+    def __init__(self, tokens: Union[BrandTokens, BrandTokensV2], use_html: bool = True, brand_guidelines: Optional[Dict[str, Any]] = None):
         """
         Initialize design engine
 
         Args:
             tokens: Brand design tokens (supports both versions)
             use_html: Use HTML/CSS renderer (requires Playwright)
+            brand_guidelines: Complete brand guidelines with assets (optional)
         """
         self.tokens = tokens
+        self.brand_guidelines = brand_guidelines
         self.use_html = use_html and PLAYWRIGHT_AVAILABLE
 
         # Initialize renderers
         if self.use_html:
             logger.info("🎨 Using HTML/CSS renderer (beautiful designs)")
-            self.renderer = HTMLDesigner(tokens)
+            self.renderer = HTMLDesigner(tokens, brand_guidelines=brand_guidelines)
+
+            if brand_guidelines and 'brand_assets' in brand_guidelines:
+                assets = brand_guidelines['brand_assets']
+                total_assets = sum([
+                    len(assets.get('characters', [])),
+                    len(assets.get('icons', [])),
+                    len(assets.get('illustrations', [])),
+                    len(assets.get('patterns_textures', []))
+                ])
+                if total_assets > 0:
+                    logger.info(f"✅ Loaded {total_assets} brand assets for design generation")
         else:
             logger.info("🎨 Using Modern renderer (gradient backgrounds + professional layouts)")
             # Convert old BrandTokens to BrandTokensV2 if needed
@@ -94,17 +107,35 @@ class DesignEngine:
         if validate_quality:
             plan = self._validate_and_adjust_colors(plan)
 
-        # Render design
+        # Render design using PBK if available (Full Intelligence Mode)
         try:
-            image = self.renderer.render_design(
-                plan=plan,
-                background_url=background_url,
-                logo_url=logo_url,
-                product_image_url=product_image_url
+            # Check if we have brand guidelines AND HTMLDesigner supports PBK
+            use_pbk = (
+                self.use_html and
+                self.brand_guidelines and
+                hasattr(self.renderer, 'render_design_with_pbk')
             )
+
+            if use_pbk:
+                logger.info("🚀 Using PBK (Full Intelligence Mode) for design generation")
+                image = self.renderer.render_design_with_pbk(
+                    plan=plan,
+                    logo_url=logo_url
+                )
+            else:
+                logger.info("🎨 Using template mode for design generation")
+                image = self.renderer.render_design(
+                    plan=plan,
+                    background_url=background_url,
+                    logo_url=logo_url,
+                    product_image_url=product_image_url
+                )
+
             logger.info("✅ Design rendered successfully")
         except Exception as e:
+            import traceback
             logger.error(f"❌ Rendering failed: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             # Fallback to modern renderer if HTML fails
             if self.use_html:
                 logger.warning("⚠️  Falling back to Modern renderer")

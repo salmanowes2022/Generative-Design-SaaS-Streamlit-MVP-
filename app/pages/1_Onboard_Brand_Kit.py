@@ -114,6 +114,29 @@ def main():
             key="brand_name_unified"
         )
 
+        # Brand Kit Selector - Which kit should this analysis update?
+        selected_brand_kit_id = None
+        if existing_kits and len(existing_kits) > 0:
+            st.markdown("#### 🎯 Which brand kit should this update?")
+
+            # Create options for selectbox
+            kit_options = {kit.name: kit.id for kit in existing_kits}
+            kit_options["➕ Create New Brand Kit"] = None
+
+            selected_kit_name = st.selectbox(
+                "Select brand kit to update:",
+                options=list(kit_options.keys()),
+                help="Choose an existing brand kit to update, or create a new one",
+                key="brand_kit_selector"
+            )
+
+            selected_brand_kit_id = kit_options[selected_kit_name]
+
+            if selected_brand_kit_id:
+                st.success(f"✅ Will update: **{selected_kit_name}**")
+            else:
+                st.info("💡 A new brand kit will be created")
+
         # Single analysis button
         can_analyze = (brand_book_file is not None or (example_images and len(example_images) > 0)) and brand_name_input
 
@@ -244,11 +267,21 @@ def main():
 
                         # Save to database
                         try:
+                            # Determine brand_kit_id to save to
+                            save_brand_kit_id = selected_brand_kit_id
+                            if not save_brand_kit_id:
+                                # Fall back to first kit if none selected
+                                brand_kits_list = brand_kit_manager.get_brand_kits_by_org(org_id)
+                                if brand_kits_list:
+                                    save_brand_kit_id = brand_kits_list[0].id
+                                    st.warning(f"⚠️ No kit selected, saving to: {brand_kits_list[0].name}")
+
                             brand_intelligence.save_brand_intelligence(
                                 org_id=org_id,
                                 brand_name=brand_name_input,
                                 guidelines=merged_intelligence,
-                                examples_analysis=examples_analysis
+                                examples_analysis=examples_analysis,
+                                brand_kit_id=save_brand_kit_id
                             )
                             st.success("✅ Brand intelligence saved! This will be used for all future designs.")
 
@@ -256,62 +289,119 @@ def main():
                             try:
                                 from app.core.brand_brain import brand_brain, BrandTokens, BrandPolicies
 
-                                # Convert brand_intelligence to BrandTokens format
-                                visual = merged_intelligence.get("visual_identity", {})
-                                messaging = merged_intelligence.get("brand_messaging", {})
-                                imagery = merged_intelligence.get("imagery_guidelines", {})
+                                # Determine which brand_kit_id to use
+                                target_brand_kit_id = selected_brand_kit_id
+                                if not target_brand_kit_id:
+                                    # Create new brand kit if none selected
+                                    st.info("Creating new brand kit...")
+                                    # Get brand_kit_id from the first brand kit OR create one
+                                    brand_kits = brand_kit_manager.get_brand_kits_by_org(org_id)
+                                    if brand_kits:
+                                        target_brand_kit_id = brand_kits[0].id
+                                        st.warning(f"⚠️ Using first brand kit: {brand_kits[0].name}")
+                                    else:
+                                        st.error("❌ No brand kits found! Please create one first.")
+                                        target_brand_kit_id = None
+                                else:
+                                    st.success(f"✅ Updating selected brand kit")
 
-                                # Extract tokens
-                                tokens_data = {
-                                    "color": {
-                                        "primary": visual.get("primary_color", "#4F46E5"),
-                                        "secondary": visual.get("secondary_colors", ["#7C3AED"])[0] if visual.get("secondary_colors") else "#7C3AED",
-                                        "accent": visual.get("accent_colors", ["#F59E0B"])[0] if visual.get("accent_colors") else "#F59E0B",
-                                        "background": "#FFFFFF",
-                                        "text": "#111111",
-                                        "min_contrast": 4.5
-                                    },
-                                    "type": {
-                                        "heading": {
-                                            "family": visual.get("primary_font", "Inter"),
-                                            "weights": [700],
-                                            "scale": [48, 36, 28]
+                                if not target_brand_kit_id:
+                                    st.error("Cannot save - no brand kit ID available")
+                                else:
+                                    # Convert brand_intelligence to BrandTokens format
+                                    visual = merged_intelligence.get("visual_identity", {})
+                                    messaging = merged_intelligence.get("brand_messaging", {})
+                                    imagery = merged_intelligence.get("imagery_guidelines", {})
+
+                                    # Extract colors from brandbook analyzer format
+                                    colors_data = visual.get("colors", {})
+
+                                    # Get hex values from color objects
+                                    primary_hex = "#4F46E5"  # default
+                                    secondary_hex = "#7C3AED"  # default
+                                    accent_hex = "#F59E0B"  # default
+
+                                    # Extract from new brandbook analyzer format
+                                    if "primary" in colors_data:
+                                        if isinstance(colors_data["primary"], dict):
+                                            primary_hex = colors_data["primary"].get("hex", primary_hex)
+                                        else:
+                                            primary_hex = colors_data["primary"]
+
+                                    if "secondary" in colors_data:
+                                        if isinstance(colors_data["secondary"], dict):
+                                            secondary_hex = colors_data["secondary"].get("hex", secondary_hex)
+                                        else:
+                                            secondary_hex = colors_data["secondary"]
+
+                                    if "accent" in colors_data:
+                                        accent_data = colors_data["accent"]
+                                        if isinstance(accent_data, list) and len(accent_data) > 0:
+                                            if isinstance(accent_data[0], dict):
+                                                accent_hex = accent_data[0].get("hex", accent_hex)
+                                            else:
+                                                accent_hex = accent_data[0]
+                                        elif isinstance(accent_data, dict):
+                                            accent_hex = accent_data.get("hex", accent_hex)
+                                        else:
+                                            accent_hex = accent_data
+
+                                    logger.info(f"✅ Extracted colors: Primary={primary_hex}, Secondary={secondary_hex}, Accent={accent_hex}")
+
+                                    # Extract tokens
+                                    tokens_data = {
+                                        "color": {
+                                            "primary": primary_hex,
+                                            "secondary": secondary_hex,
+                                            "accent": accent_hex,
+                                            "background": "#FFFFFF",
+                                            "text": "#111111",
+                                            "min_contrast": 4.5
                                         },
-                                        "body": {
-                                            "family": visual.get("body_font", "Inter"),
-                                            "weights": [400],
-                                            "size": 16
-                                        }
-                                    },
-                                    "logo": {
-                                        "variants": [{"name": "full", "path": "", "on": "light"}],
-                                        "min_px": 128,
-                                        "safe_zone": "1x",
-                                        "allowed_positions": ["TL", "TR", "BR"]
-                                    },
-                                    "layout": {"grid": 12, "spacing": 8, "radius": 16},
-                                    "templates": {},
-                                    "cta_whitelist": messaging.get("cta_whitelist", ["Learn More", "Get Started", "Try Free"])
-                                }
+                                        "type": {
+                                            "heading": {
+                                                "family": visual.get("primary_font", "Inter"),
+                                                "weights": [700],
+                                                "scale": [48, 36, 28]
+                                            },
+                                            "body": {
+                                                "family": visual.get("body_font", "Inter"),
+                                                "weights": [400],
+                                                "size": 16
+                                            }
+                                        },
+                                        "logo": {
+                                            "variants": [{"name": "full", "path": "", "on": "light"}],
+                                            "min_px": 128,
+                                            "safe_zone": "1x",
+                                            "allowed_positions": ["TL", "TR", "BR"]
+                                        },
+                                        "layout": {"grid": 12, "spacing": 8, "radius": 16},
+                                        "templates": {},
+                                        "cta_whitelist": messaging.get("cta_whitelist", ["Learn More", "Get Started", "Try Free"])
+                                    }
 
-                                # Extract policies
-                                policies_data = {
-                                    "voice": messaging.get("voice_attributes", ["Professional", "Trustworthy", "Innovative"]),
-                                    "forbid": messaging.get("forbidden_terms", [])
-                                }
+                                    # Extract policies
+                                    policies_data = {
+                                        "voice": messaging.get("voice_attributes", ["Professional", "Trustworthy", "Innovative"]),
+                                        "forbid": messaging.get("forbidden_terms", [])
+                                    }
 
-                                tokens = BrandTokens.from_dict(tokens_data)
-                                policies = BrandPolicies.from_dict(policies_data)
+                                    tokens = BrandTokens.from_dict(tokens_data)
+                                    policies = BrandPolicies.from_dict(policies_data)
 
-                                # Get brand_kit_id from the first brand kit of this org
-                                brand_kits = brand_kit_manager.get_brand_kits_by_org(org_id)
-                                if brand_kits:
-                                    brand_brain.save_brand_brain(brand_kits[0].id, tokens, policies)
-                                    st.success("✅ Brand Brain updated! Chat will now use your brand book guidelines.")
+                                    # Save to the selected/determined brand kit
+                                    brand_brain.save_brand_brain(target_brand_kit_id, tokens, policies)
+                                    st.success(f"✅ Brand Brain updated! Chat will now use your brand book guidelines.")
+
+                                    # Show what colors were extracted
+                                    st.info(f"🎨 Extracted Colors: Primary={primary_hex}, Secondary={secondary_hex}, Accent={accent_hex}")
 
                             except Exception as brain_error:
                                 logger.warning(f"Could not update brand_brain: {brain_error}")
                                 st.warning(f"⚠️ Brand intelligence saved but Chat integration needs manual setup")
+                                import traceback
+                                st.error(traceback.format_exc())
 
                         except Exception as save_error:
                             logger.error(f"Failed to save brand intelligence: {str(save_error)}")
