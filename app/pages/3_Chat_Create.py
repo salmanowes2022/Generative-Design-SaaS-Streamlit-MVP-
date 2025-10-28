@@ -452,73 +452,62 @@ def render_chat_interface():
                                 for suggestion in suggestions:
                                     st.write(f"• {suggestion}")
 
-                        # Save design to storage
-                        st.write("💾 Saving design...")
+                        # Save ALL 3 designs to storage and library
+                        st.write("💾 Saving all 3 designs to your library...")
                         from app.core.storage import storage
                         from PIL import Image
                         import io
+                        from app.infra.db import db
 
-                        # Convert PIL Image to bytes
-                        img_byte_arr = io.BytesIO()
-                        design_image.save(img_byte_arr, format='PNG')
-                        img_byte_arr.seek(0)
+                        # Get brand kit ID if available
+                        brand_kit_id = None
+                        if hasattr(st.session_state, 'brand_kit') and st.session_state.brand_kit:
+                            brand_kit_id = st.session_state.brand_kit.id
 
-                        # Upload to storage
-                        filename = f"chat_design_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                        file_path = f"{st.session_state.org_id}/chat_designs/{filename}"
-                        design_url = storage.upload_file(
-                            bucket_type="assets",
-                            file_path=file_path,
-                            file_data=img_byte_arr,
-                            content_type="image/png"
-                        )
+                        saved_urls = []
 
-                        # Save to database (design library)
-                        try:
-                            from app.infra.db import db
-                            import json
+                        # Save each of the 3 variations
+                        for idx, variation in enumerate(design_variations):
+                            try:
+                                # Convert PIL Image to bytes
+                                img_byte_arr = io.BytesIO()
+                                variation['image'].save(img_byte_arr, format='PNG')
+                                img_byte_arr.seek(0)
 
-                            # Get brand kit ID if available
-                            brand_kit_id = None
-                            if hasattr(st.session_state, 'brand_kit') and st.session_state.brand_kit:
-                                brand_kit_id = st.session_state.brand_kit.id
+                                # Upload to storage with unique filename
+                                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                                filename = f"chat_design_{timestamp}_{variation['palette_mode']}_{idx}.png"
+                                file_path = f"{st.session_state.org_id}/chat_designs/{filename}"
+                                design_url = storage.upload_file(
+                                    bucket_type="assets",
+                                    file_path=file_path,
+                                    file_data=img_byte_arr,
+                                    content_type="image/png"
+                                )
+                                saved_urls.append(design_url)
 
-                            # Save to assets table (design library)
-                            db.execute("""
-                                INSERT INTO assets (
-                                    org_id,
-                                    brand_kit_id,
-                                    url,
-                                    design_plan,
-                                    quality_score,
-                                    generation_metadata,
-                                    created_at
-                                ) VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                            """, (
-                                str(st.session_state.org_id),
-                                str(brand_kit_id) if brand_kit_id else None,
-                                design_url,
-                                json.dumps({
-                                    'headline': plan.headline,
-                                    'subhead': plan.subhead,
-                                    'cta_text': plan.cta_text,
-                                    'channel': plan.channel,
-                                    'aspect_ratio': plan.aspect_ratio,
-                                    'palette_mode': design_variations[selected_variation]['palette_mode']
-                                }),
-                                quality_score,
-                                json.dumps({
-                                    'mode': 'pbk_intelligence' if st.session_state.get('brand_guidelines') else 'template',
-                                    'created_from': 'chat_interface',
-                                    'variations_generated': len(design_variations)
-                                })
-                            ))
+                                # Save to database (design library)
+                                db.execute("""
+                                    INSERT INTO assets (
+                                        org_id,
+                                        brand_kit_id,
+                                        base_url,
+                                        created_at
+                                    ) VALUES (%s, %s, %s, NOW())
+                                """, (
+                                    str(st.session_state.org_id),
+                                    str(brand_kit_id) if brand_kit_id else None,
+                                    design_url
+                                ))
 
-                            logger.info(f"✅ Design saved to library: {file_path}")
+                                logger.info(f"✅ Design {idx+1}/3 saved to library: {file_path}")
 
-                        except Exception as db_error:
-                            logger.warning(f"Could not save to design library: {db_error}")
-                            # Don't block the user if database save fails
+                            except Exception as save_error:
+                                logger.warning(f"Could not save design {idx+1} to library: {save_error}")
+                                # Continue saving other designs even if one fails
+
+                        # Use the selected design URL for session state
+                        design_url = saved_urls[selected_variation] if saved_urls else None
 
                         # Save image and URL to session state
                         st.session_state.current_design_image = design_image

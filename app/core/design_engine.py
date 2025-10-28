@@ -107,14 +107,10 @@ class DesignEngine:
         if validate_quality:
             plan = self._validate_and_adjust_colors(plan)
 
-        # Render design using PBK if available (Full Intelligence Mode)
+        # Render design using Modern renderer (PBK disabled - not working well)
         try:
-            # Check if we have brand guidelines AND HTMLDesigner supports PBK
-            use_pbk = (
-                self.use_html and
-                self.brand_guidelines and
-                hasattr(self.renderer, 'render_design_with_pbk')
-            )
+            # ALWAYS use Modern renderer - it creates clean, professional designs
+            use_pbk = False  # Disable PBK - GPT-4 creates bad layouts
 
             if use_pbk:
                 logger.info("🚀 Using PBK (Full Intelligence Mode) for design generation")
@@ -123,7 +119,7 @@ class DesignEngine:
                     logo_url=logo_url
                 )
             else:
-                logger.info("🎨 Using template mode for design generation")
+                logger.info("🎨 Using Modern renderer for design generation")
                 image = self.renderer.render_design(
                     plan=plan,
                     background_url=background_url,
